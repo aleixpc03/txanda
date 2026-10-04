@@ -1,0 +1,9 @@
+[project]
+name = "txanda"
+version = "0.1.0"
+description = "Planificación de coladas frente al precio cuartohorario de la electricidad"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.claude/
+.DS_Store
+Thumbs.db
+# Datos descargados: cada uno los descarga (los de OMIP no se pueden redistribuir)
+datos/
+# Resultados completos, con estrategias que usan futuros de OMIP; la versión publicable va en resultados/
+salidas/
+# Borradores de la memoria y el guion: incluyen cifras con futuros de OMIP y huecos por rellenar
+memoria/
