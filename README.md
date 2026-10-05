@@ -26,7 +26,7 @@ python3 -m venv .venv
 
 `memoria/Memoria_Txanda_borrador.docx` (y su PDF) es el borrador de la memoria del concurso: 8
 páginas con los apartados que piden las bases. Lo marcado en amarillo lo tiene que completar
-el equipo (nombres, captura del prototipo, inversión) o depende del permiso de OMIP.
+el equipo (nombres, captura del prototipo, inversión).
 
 ## Prototipo
 
@@ -42,7 +42,7 @@ el oráculo, la comparación de estrategias y la orden de fabricación descargab
 **Resultados del año** muestra el backtest y los gráficos de sensibilidad si ya existen
 en `salidas/`. Una semana tarda unos 20 s la primera vez; después queda en caché.
 
-Con Docker (montando los datos, porque los futuros de OMIP no pueden ir en la imagen):
+Con Docker (montando las carpetas de datos y resultados):
 
 ```bash
 docker build -t txanda .
@@ -51,11 +51,8 @@ docker run -p 8501:8501 -v "$PWD/datos:/app/datos" -v "$PWD/salidas:/app/salidas
 
 ## Publicar en Streamlit Community Cloud
 
-La app publicada no ofrece la previsión con futuros de OMIP ni muestra sus resultados: sus
-condiciones no permiten redistribuir sus datos. Esto ocurre solo, porque la opción aparece únicamente si
-los datos de OMIP están descargados en el equipo (o con `TXANDA_OMIP=1`, que nunca debe ponerse
-en la nube). En la nube los precios se descargan de Red Eléctrica, un mes por petición: la
-primera carga tarda alrededor de un minuto y después queda en caché.
+En la nube los precios se descargan de Red Eléctrica, un mes por petición: la primera carga
+tarda alrededor de un minuto y después queda en caché.
 
 1. Subir el repositorio a GitHub como privado (desde esta carpeta):
    `gh repo create txanda --private --source . --push`
@@ -85,9 +82,7 @@ al día siguiente (horizonte rodante).
 | B | Paradas en horas caras | Qué cuartos de D+1 son caros (el 25 % más caro) | 18 coladas/día |
 | OD | Óptimo diario | Precio exacto de D+1 | 18 coladas/día |
 | C | Semanal, previsión ingenua | D+1 exacto; D+2…domingo = mismo día de la semana anterior | 126/semana, 12–22/día |
-| F | Semanal, futuros OMIP | D+1 exacto; D+2…domingo = nivel diario de los futuros de OMIP con la forma de la semana anterior | 126/semana, 12–22/día |
 | L | Semanal, previsión LEAR | D+1 exacto; D+2…domingo = LASSO autorregresivo (Lago et al., 2021) | 126/semana, 12–22/día |
-| H | Semanal, híbrido | D+1 exacto; D+2 = LEAR; D+3…domingo = futuros de OMIP | 126/semana, 12–22/día |
 | D | Semanal, previsión ML | D+1 exacto; D+2…domingo = previsión con árboles de gradiente | 126/semana, 12–22/día |
 | O | Oráculo semanal | Toda la semana de antemano. No es implementable: es el techo | 126/semana, 12–22/día |
 
@@ -98,11 +93,9 @@ Las previsiones están en `txanda/prevision.py` y se reentrenan cada semana con 
   horarios de D+1, D, D−1 y del mismo día de la semana anterior, con la transformación asinh
   estandarizada de la literatura. Es la referencia estándar en previsión de precios eléctricos.
 - **ML**: árboles con gradiente (HistGradientBoosting) sobre precios recientes y calendario.
-- **Futuros OMIP** (`txanda/omip.py`): precio de referencia del contrato diario de carga base
-  en la última sesión cerrada antes del día de decisión, con la forma horaria del mismo día de
-  la semana anterior. No se entrena nada. Los datos se descargan de la web pública de OMIP;
-  sus condiciones permiten guardarlos para uso no comercial, pero reproducirlos o publicarlos
-  requiere autorización escrita de OMIP. Por eso se quedan en `datos/omip/`, fuera del repositorio.
+- **Futuros de OMIP: no se usan.** Sus condiciones no permiten usar sus datos en el proyecto.
+  El código (`txanda/omip.py`, estrategias F y H) se conserva, pero solo se activa con
+  `TXANDA_OMIP=1`; ni la app ni los backtests lo usan por defecto.
 
 ## Formulación
 
@@ -140,56 +133,48 @@ cada plan se valida con `verificar_plan`, que no usa el MILP.
 | B · Paradas en horas caras | 17,36 M€ | 27,0 | −1,2 % | −33 % |
 | OD · Óptimo diario | 16,99 M€ | 26,4 | 0,9 % | 24 % |
 | C · Semanal, previsión ingenua | 16,99 M€ | 26,4 | 0,9 % | 24 % |
-| F · Semanal, futuros OMIP | 16,82 M€ | 26,2 | 1,9 % | 51 % |
 | L · Semanal, previsión LEAR | 16,82 M€ | 26,2 | 1,9 % | 50 % |
-| H · Semanal, híbrido LEAR + futuros | 16,78 M€ | 26,1 | 2,1 % | 57 % |
 | D · Semanal, previsión ML | 16,97 M€ | 26,4 | 1,0 % | 27 % |
 | O · Oráculo semanal | 16,50 M€ | 25,7 | 3,8 % | 100 % |
 
 Comparaciones semana a semana (prueba de Wilcoxon pareada):
 
-- F y L ganan a la previsión ingenua (F: 36 de 51 semanas, p = 0,0006; L: 33, p = 0,025)
-  y al óptimo diario (F: 39 semanas, p = 7·10⁻⁵; L: 37, p = 0,002). Entre ellas no hay
-  diferencia (p = 0,91).
+- L gana a la previsión ingenua (33 de 51 semanas, p = 0,025) y al óptimo diario (37
+  semanas, p = 0,002).
 - L gana a la previsión ML (32 semanas, p = 0,013). D no se distingue de C ni de OD.
 - Todas las estrategias optimizadas ganan a la práctica del sector B; OD gana 49 de 51
   semanas (p = 6·10⁻¹⁰). B pierde frente al horario fijo A (p = 0,004).
 - Error medio de la previsión (€/MWh): la ingenua, 24–28; LEAR es la mejor a dos días
-  (16) y los futuros, a partir de tres (22–23). Una previsión más precisa no garantiza un
+  (16) y a cinco o más se acerca a la ingenua. Una previsión más precisa no garantiza un
   plan más barato: la ML acierta más que la ingenua y planifica casi igual.
-- Los futuros de OMIP cubrieron las 1.071 previsiones del backtest.
 - **Emisiones** (`txanda/emisiones.py`): con la intensidad de CO₂ del sistema peninsular en cada
   cuarto de hora (generación cada 5 minutos y emisiones oficiales diarias de Red Eléctrica; la
   serie reconstruida reproduce el total diario oficial), el horario fijo se asocia a 33,6 kg
-  CO₂/t. L y F lo reducen un 1,7 % (≈ 370 t al año en la planta tipo), C un 1,6 %, D un 1,4 % y
+  CO₂/t. L lo reduce un 1,7 % (≈ 370 t al año en la planta tipo), C un 1,6 %, D un 1,4 % y
   el oráculo un 2,6 %. El óptimo diario no cambia las emisiones (−0,0 %) y B las sube un 0,2 %:
   la reducción viene de repartir la producción entre días, no de moverla dentro del día.
-- El híbrido H gana a F en el año (33 de 51 semanas, p = 0,02), pero el corte (LEAR a dos
-  días, futuros desde tres) se eligió mirando los errores de este mismo año. En la segunda
-  mitad (abril a septiembre, 25 semanas) H y F empatan (p = 0,98; ambos capturan el 58 %).
-  Conclusión: H no mejora de forma sólida a los futuros solos; F es igual de bueno y más simple.
 
 ## Sensibilidad
 
-**Coste de arranque** (0 a 10.000 €, `salidas/sensibilidad_arranque_*.png`). La clasificación
-no cambia: F y L capturan entre el 49 % y el 64 % del ahorro máximo y ganan al óptimo diario
-con cualquier coste (p ≤ 0,003). F gana a la previsión ingenua con cualquier coste (p ≤ 0,008);
-L lo consigue a partir de 2.500 €. B queda siempre por debajo del horario fijo. El techo del
+**Coste de arranque** (0 a 10.000 €, `resultados/sensibilidad_arranque.png`). La clasificación
+no cambia: L captura entre el 50 % y el 64 % del ahorro máximo y gana al óptimo diario con
+cualquier coste (p ≤ 0,003). A la previsión ingenua le gana con significación a partir de
+2.500 €. B queda siempre por debajo del horario fijo. El techo del
 oráculo se mueve poco (3,8–4,3 %). Una artesa dura como mucho 10 coladas, así que una semana
 de 126 necesita al menos 13 secuencias: los arranques solo varían entre 13 y 16 por semana.
 
 **Flexibilidad diaria** (rango de coladas por día con 126 a la semana,
-`salidas/sensibilidad_flexibilidad_*.png`):
+`resultados/sensibilidad_flexibilidad.png`):
 
-| Rango diario | Techo O | F | L | C (ingenua) | D (ML) |
-|---|---|---|---|---|---|
-| 18–18 (sin flexibilidad) | 1,8 % | 1,5 % | 1,5 % | 1,4 % | 1,4 % |
-| 16–20 | 3,1 % | 1,9 % | 1,9 % | 1,4 % | 1,5 % |
-| 12–22 (caso base) | 3,8 % | 1,9 % | 1,9 % | 0,9 % | 1,0 % |
-| 0–22 | 4,0 % | 1,9 % | 2,0 % | 0,5 % | 0,8 % |
+| Rango diario | Techo O | L | C (ingenua) | D (ML) |
+|---|---|---|---|---|
+| 18–18 (sin flexibilidad) | 1,8 % | 1,5 % | 1,4 % | 1,4 % |
+| 16–20 | 3,1 % | 1,9 % | 1,4 % | 1,5 % |
+| 12–22 (caso base) | 3,8 % | 1,9 % | 0,9 % | 1,0 % |
+| 0–22 | 4,0 % | 2,0 % | 0,5 % | 0,8 % |
 
-Ahorro frente al horario fijo A. Con ±2 coladas al día (16–20) F y L ya consiguen casi todo
-su ahorro (≈ 335 k€/año en la planta tipo); más flexibilidad sube el techo pero no lo que
+Ahorro frente al horario fijo A. Con ±2 coladas al día (16–20) L ya consigue casi todo su
+ahorro (≈ 333 k€/año en la planta tipo); más flexibilidad sube el techo pero no lo que
 capturan, porque el límite es la previsión. Con previsiones malas, la flexibilidad perjudica:
 C y D ahorran menos cuanto más margen tienen, porque desplazan producción hacia días que
 creían baratos y no lo eran. Sin flexibilidad (18–18), mirar la semana entera sigue ganando
@@ -212,7 +197,6 @@ Son órdenes de magnitud de la literatura, no datos de una planta concreta.
 
 ## Pendiente
 
-1. Pedir a OMIP autorización escrita antes de publicar cifras obtenidas con sus futuros.
-2. Previsiones de eólica, solar y demanda (ESIOS), precio del gas (MIBGAS) y festivos.
-3. Estrategia E: entrenar la previsión por el coste de la decisión (SPO+, PyEPO).
-4. Peajes y cargos por periodo tarifario (P1–P6) y otras cargas (horno cuchara, laminación).
+1. Previsiones de eólica, solar y demanda (ESIOS), precio del gas (MIBGAS) y festivos.
+2. Estrategia E: entrenar la previsión por el coste de la decisión (SPO+, PyEPO).
+3. Peajes y cargos por periodo tarifario (P1–P6) y otras cargas (horno cuchara, laminación).

@@ -89,6 +89,14 @@ def _columnas(tabla):
     return COLUMNAS_SEMANA + [c for c in COLUMNAS_CO2 if c in tabla.columns]
 
 
+def _futuros(desde, hasta):
+    """Futuros de OMIP, solo si se activan con TXANDA_OMIP=1: el proyecto no usa sus datos."""
+    if os.environ.get("TXANDA_OMIP") != "1":
+        return None
+
+    return tabla_futuros(desde, hasta)
+
+
 def _matriz(desde, hasta):
     """Matriz diaria de precios, descargando antes lo que falte."""
     for fecha in dias(desde, hasta):
@@ -100,7 +108,6 @@ def _matriz(desde, hasta):
 
 
 def orden_semana(args):
-    from .omip import tabla_futuros
     from .prevision import ingenua
     from .semana import cargar_semana, simular_semana
 
@@ -109,7 +116,7 @@ def orden_semana(args):
         raise SystemExit(f"{lunes:%d-%m-%Y} no es lunes")
     M, fechas = _matriz(lunes - pd.Timedelta(days=HISTORIA_DIAS), lunes + pd.Timedelta(days=6))
     pos = fechas.get_loc(lunes)
-    futuros = tabla_futuros(lunes - pd.Timedelta(days=10), lunes + pd.Timedelta(days=5))
+    futuros = _futuros(lunes - pd.Timedelta(days=10), lunes + pd.Timedelta(days=5))
     previsores = previsores_semana(lunes, M, fechas, futuros)
     semana = cargar_semana(lunes)
     tabla, planes, errores = simular_semana(Planta(), semana, M, fechas, previsores, fraccion_cara=args.fraccion_cara)
@@ -134,12 +141,11 @@ def orden_semana(args):
 def orden_semanas(args):
     from scipy.stats import wilcoxon
 
-    from .omip import tabla_futuros
     from .prevision import PrevisorFuturos
 
     lunes = pd.date_range(args.desde, args.hasta, freq="W-MON")
     M, fechas = _matriz(lunes[0] - pd.Timedelta(days=HISTORIA_DIAS), lunes[-1] + pd.Timedelta(days=6))
-    futuros = tabla_futuros(lunes[0] - pd.Timedelta(days=10), lunes[-1] + pd.Timedelta(days=5))
+    futuros = _futuros(lunes[0] - pd.Timedelta(days=10), lunes[-1] + pd.Timedelta(days=5))
     from .emisiones import descargar
     sin_emisiones = descargar(lunes[0], lunes[-1] + pd.Timedelta(days=6))  # en serie, antes de repartir semanas
     os.environ.setdefault("OMP_NUM_THREADS", "1")  # un hilo por proceso: el paralelismo va por semanas
@@ -182,7 +188,7 @@ def orden_semanas(args):
         print(f"  {a} frente a {b}: mediana {dif.median():,.0f} €/semana, {a} gana {(dif < 0).sum()} de {len(dif)} semanas, Wilcoxon p = {p:.3g}".replace(",", "."))
     print("\nError medio de la previsión (€/MWh) según los días de antelación:")
     print(_formato(errores.drop(columns="lunes").groupby("k").mean()))
-    if len(futuros):
+    if futuros is not None and len(futuros):
         previsor = PrevisorFuturos(M, fechas, futuros)
         pedidas = [(fechas[fechas.get_loc(l) + j - 1], fechas[fechas.get_loc(l) + i]) for l in lunes for j in range(7) for i in range(j + 1, 7)]
         con_cotizacion = sum(previsor.nivel(d, t) is not None for d, t in pedidas)
@@ -193,11 +199,10 @@ def orden_semanas(args):
 def orden_sensibilidad_arranque(args):
     from scipy.stats import wilcoxon
 
-    from .omip import tabla_futuros
 
     lunes = pd.date_range(args.desde, args.hasta, freq="W-MON")
     M, fechas = _matriz(lunes[0] - pd.Timedelta(days=HISTORIA_DIAS), lunes[-1] + pd.Timedelta(days=6))
-    futuros = tabla_futuros(lunes[0] - pd.Timedelta(days=10), lunes[-1] + pd.Timedelta(days=5))
+    futuros = _futuros(lunes[0] - pd.Timedelta(days=10), lunes[-1] + pd.Timedelta(days=5))
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     with ProcessPoolExecutor(max_workers=args.procesos) as pool:
         partes = list(pool.map(resolver_semana_sensibilidad, lunes, repeat(M), repeat(fechas), repeat(args.costes),
@@ -240,7 +245,6 @@ def orden_sensibilidad_arranque(args):
 def orden_sensibilidad_flexibilidad(args):
     from scipy.stats import wilcoxon
 
-    from .omip import tabla_futuros
 
     base = Planta()
     variantes = {}
@@ -252,7 +256,7 @@ def orden_sensibilidad_flexibilidad(args):
 
     lunes = pd.date_range(args.desde, args.hasta, freq="W-MON")
     M, fechas = _matriz(lunes[0] - pd.Timedelta(days=HISTORIA_DIAS), lunes[-1] + pd.Timedelta(days=6))
-    futuros = tabla_futuros(lunes[0] - pd.Timedelta(days=10), lunes[-1] + pd.Timedelta(days=5))
+    futuros = _futuros(lunes[0] - pd.Timedelta(days=10), lunes[-1] + pd.Timedelta(days=5))
     os.environ.setdefault("OMP_NUM_THREADS", "1")
     with ProcessPoolExecutor(max_workers=args.procesos) as pool:
         partes = list(pool.map(resolver_semana_variantes, lunes, repeat(M), repeat(fechas), repeat(variantes),

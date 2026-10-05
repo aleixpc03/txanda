@@ -29,12 +29,9 @@ SALIDAS, PUBLICOS = RAIZ / "salidas", RAIZ / "resultados"
 
 
 def omip_disponible() -> bool:
-    """Los futuros de OMIP solo se ofrecen si ya están descargados en este equipo o si TXANDA_OMIP=1.
-    Sus condiciones no permiten redistribuirlos, así que la app publicada no los usa."""
-    valor = os.environ.get("TXANDA_OMIP")
-    if valor in ("0", "1"):
-        return valor == "1"
-    return any((RAIZ / "datos" / "omip").glob("ftb_d_*.csv"))
+    """Los futuros de OMIP no se usan en el proyecto: sus condiciones no lo permiten. El código se
+    conserva, pero solo se activa con TXANDA_OMIP=1."""
+    return os.environ.get("TXANDA_OMIP") == "1"
 
 
 OMIP = omip_disponible()
