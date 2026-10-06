@@ -138,11 +138,35 @@ def orden_semana(args):
     print(f"Gráfico: {ruta}")
 
 
+def _cambios_planta(args) -> dict:
+    """Cambios sobre la planta tipo pedidos en la línea de órdenes."""
+    base, cambios = Planta(), {}
+    if args.coste_arranque is not None:
+        cambios["coste_arranque_eur"] = args.coste_arranque
+    if args.secuencia_min is not None:
+        cambios["secuencia_min"] = args.secuencia_min
+    if args.secuencia_max is not None:
+        cambios["secuencia_max"] = args.secuencia_max
+    if args.cambio_artesa is not None:
+        cuartos = round(args.cambio_artesa / 0.25)
+        if cuartos < 1 or abs(cuartos * 0.25 - args.cambio_artesa) > 1e-9:
+            raise SystemExit("El cambio de artesa tiene que ser un múltiplo de 0,25 h (al menos un cuarto de hora)")
+        cambios["cambio_secuencia_cuartos"] = cuartos
+    if args.rango is not None:
+        minimo, maximo = (int(v) for v in args.rango.split("-"))
+        if not minimo <= base.coladas_dia <= maximo:
+            raise SystemExit(f"El rango {args.rango} debe contener las {base.coladas_dia} coladas diarias")
+        cambios["holgura_menos"], cambios["holgura_mas"] = base.coladas_dia - minimo, maximo - base.coladas_dia
+    Planta(**{**{f: getattr(base, f) for f in base.__dataclass_fields__}, **cambios})  # valida la combinación
+    return cambios
+
+
 def orden_semanas(args):
     from scipy.stats import wilcoxon
 
     from .prevision import PrevisorFuturos
 
+    cambios = _cambios_planta(args)
     lunes = pd.date_range(args.desde, args.hasta, freq="W-MON")
     M, fechas = _matriz(lunes[0] - pd.Timedelta(days=HISTORIA_DIAS), lunes[-1] + pd.Timedelta(days=6))
     futuros = _futuros(lunes[0] - pd.Timedelta(days=10), lunes[-1] + pd.Timedelta(days=5))
@@ -150,13 +174,26 @@ def orden_semanas(args):
     sin_emisiones = descargar(lunes[0], lunes[-1] + pd.Timedelta(days=6))  # en serie, antes de repartir semanas
     os.environ.setdefault("OMP_NUM_THREADS", "1")  # un hilo por proceso: el paralelismo va por semanas
     with ProcessPoolExecutor(max_workers=args.procesos) as pool:
-        salida = list(pool.map(resolver_semana, lunes, repeat(M), repeat(fechas), repeat(args.fraccion_cara), repeat(futuros)))
+        salida = list(pool.map(resolver_semana, lunes, repeat(M), repeat(fechas), repeat(args.fraccion_cara), repeat(futuros),
+                               repeat(cambios), repeat(args.gap)))
     resultados = pd.concat([r for r, _ in salida], ignore_index=True)
     errores = pd.concat([e for _, e in salida], ignore_index=True)
-    SALIDAS.mkdir(exist_ok=True)
+    # Los escenarios van a una carpeta aparte para no sustituir los resultados del caso base.
+    carpeta = SALIDAS / "escenarios" if args.etiqueta else SALIDAS
+    carpeta.mkdir(parents=True, exist_ok=True)
+    prefijo = f"{args.etiqueta}_semanas" if args.etiqueta else "semanas"
     sufijo = f"{lunes[0]:%Y%m%d}_{lunes[-1]:%Y%m%d}"
-    resultados.to_csv(SALIDAS / f"semanas_{sufijo}.csv", index=False)
-    errores.to_csv(SALIDAS / f"semanas_{sufijo}_errores.csv", index=False)
+    ruta_resultados = carpeta / f"{prefijo}_{sufijo}.csv"
+    resultados.to_csv(ruta_resultados, index=False)
+    errores.to_csv(carpeta / f"{prefijo}_{sufijo}_errores.csv", index=False)
+    if cambios:
+        print("Planta: " + ", ".join(f"{k} = {v}" for k, v in cambios.items()) + "\n")
+    if args.gap:
+        print(f"Tolerancia del solver: {100 * args.gap:g} % del coste de cada problema.")
+    no_optimos = resultados[~resultados.optimo_demostrado]
+    if len(no_optimos):
+        print(f"Planes sin óptimo demostrado (se agotó el tiempo y se usó la mejor solución): {len(no_optimos)} de "
+              f"{len(resultados)} · {sorted(no_optimos.clave.unique())}\n")
 
     sumas = ["coste_total_eur", "arranques", "toneladas"] + (["emisiones_t"] if "emisiones_t" in resultados else [])
     total = resultados.groupby("clave", sort=False)[sumas].sum()
@@ -193,7 +230,7 @@ def orden_semanas(args):
         pedidas = [(fechas[fechas.get_loc(l) + j - 1], fechas[fechas.get_loc(l) + i]) for l in lunes for j in range(7) for i in range(j + 1, 7)]
         con_cotizacion = sum(previsor.nivel(d, t) is not None for d, t in pedidas)
         print(f"\nFuturos OMIP: {con_cotizacion} de {len(pedidas)} previsiones con cotización; el resto usa la ingenua.")
-    print(f"\nResultados: {SALIDAS / f'semanas_{sufijo}.csv'}")
+    print(f"\nResultados: {ruta_resultados}")
 
 
 def orden_sensibilidad_arranque(args):
@@ -354,6 +391,13 @@ def main(argv=None):
     p_sems.add_argument("desde")
     p_sems.add_argument("hasta")
     p_sems.add_argument("--procesos", type=int, default=os.cpu_count(), help="semanas que se resuelven en paralelo")
+    p_sems.add_argument("--coste-arranque", type=float, help="€ por arranque de secuencia (caso base: 2.500)")
+    p_sems.add_argument("--secuencia-min", type=int, help="coladas mínimas por secuencia (caso base: 4)")
+    p_sems.add_argument("--secuencia-max", type=int, help="coladas máximas por secuencia (caso base: 10)")
+    p_sems.add_argument("--cambio-artesa", type=float, help="horas de cambio de artesa, múltiplo de 0,25 (caso base: 1)")
+    p_sems.add_argument("--rango", help="coladas mínimas-máximas por día, p. ej. 16-20 (caso base: 12-22)")
+    p_sems.add_argument("--etiqueta", help="nombre del escenario; guarda los resultados en salidas/escenarios/")
+    p_sems.add_argument("--gap", type=float, default=0.0, help="tolerancia relativa del solver (p. ej. 0.0001 = 0,01 %%)")
     p_sems.set_defaults(func=orden_semanas)
     p_sens = sub.add_parser("sensibilidad-arranque", help="backtest semanal con varios costes de arranque")
     p_sens.add_argument("desde")

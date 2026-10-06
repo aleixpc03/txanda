@@ -89,9 +89,14 @@ def cupos_semanales(planta: Planta, semana: Semana) -> list[Cupo]:
     return diarios + [Cupo(0, lim[-1], 7 * planta.coladas_dia, 7 * planta.coladas_dia)]
 
 
+# Tolerancia relativa del solver. 0 = óptimo demostrado (caso base); en escenarios más difíciles se
+# puede relajar a 1e-4 (0,01 % del coste de la semana) desde la línea de órdenes.
+GAP = 0.0
+
+
 def _resolver(planta, senal, disponible, cupos, fijadas=None) -> Plan:
     c = coste_colada(planta, senal) + DESEMPATE_EUR * np.arange(len(senal))
-    return resolver(planta, c, planta.coste_arranque_eur, disponible, cupos, fijadas)
+    return resolver(planta, c, planta.coste_arranque_eur, disponible, cupos, fijadas, gap=GAP)
 
 
 def _rodar(planta: Planta, semana: Semana, disponible, cupos, senal_paso, dias_vista: int = 7) -> Plan:
@@ -100,14 +105,15 @@ def _rodar(planta: Planta, semana: Semana, disponible, cupos, senal_paso, dias_v
     `dias_vista` limita el modelo a los días j … j + dias_vista − 1. Con cupos diarios
     basta con mirar un día más allá, para las secuencias que cruzan medianoche.
     """
-    lim, comprometidas, segundos = semana.limites, (), 0.0
+    lim, comprometidas, segundos, estado = semana.limites, (), 0.0, "Optimal"
     for j in range(7):
         fin = lim[min(7, j + dias_vista)]
         cupos_vista = [c for c in cupos if c.fin <= fin]
         plan = _resolver(planta, senal_paso(j)[:fin], disponible[:fin], cupos_vista, fijadas=(lim[j], comprometidas))
         segundos += plan.segundos
+        estado = estado if plan.estado == "Optimal" else plan.estado
         comprometidas = tuple(s for s in plan.inicios if s < lim[j + 1])
-    return Plan(comprometidas, "Optimal", segundos)
+    return Plan(comprometidas, estado, segundos)
 
 
 def simular_semana(
@@ -168,7 +174,8 @@ def simular_semana(
     filas = {}
     for clave, plan in planes.items():
         verificar_plan(planta, disponible, plan.inicios, diarios if clave in ("A", "B", "OD") else semanales)
-        filas[clave] = {"estrategia": NOMBRES_SEMANA[clave], **evaluar(planta, real, plan.inicios, intensidad), "segundos": plan.segundos}
+        filas[clave] = {"estrategia": NOMBRES_SEMANA[clave], **evaluar(planta, real, plan.inicios, intensidad),
+                        "segundos": plan.segundos, "optimo_demostrado": plan.estado == "Optimal"}
     tabla = pd.DataFrame.from_dict(filas, orient="index")
     base, techo = tabla.loc["A", "coste_total_eur"], tabla.loc["O", "coste_total_eur"]
     tabla["ahorro_vs_A_eur"] = base - tabla["coste_total_eur"]

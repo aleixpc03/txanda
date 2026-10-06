@@ -159,7 +159,9 @@ def resolver(
     resultado = prob.solve(pulp.HiGHS(msg=False, timeLimit=limite_s, gapRel=gap))
     segundos = time.perf_counter() - inicio
     estado = resultado.status.name
-    if resultado.status != pulp.LpSolveStatus.Optimal:
+    # Si se agota el tiempo pero hay solución, se usa la mejor encontrada y queda anotado en `estado`.
+    con_solucion = resultado.status == pulp.LpSolveStatus.TimeLimit and resultado.has_solution
+    if resultado.status != pulp.LpSolveStatus.Optimal and not con_solucion:
         raise RuntimeError(
             f"El MILP no tiene solución óptima ({estado}). Revisa cupos, turnos y "
             "secuencias: puede que las coladas no quepan en el horizonte."

@@ -29,13 +29,22 @@ def previsores_semana(lunes, M, fechas, futuros=None, hibrido: bool = True) -> d
     return previsores
 
 
-def resolver_semana(lunes, M, fechas, fraccion_cara: float = 0.25, futuros=None):
-    """Entrena las previsiones con lo conocido el domingo y simula la semana."""
+def resolver_semana(lunes, M, fechas, fraccion_cara: float = 0.25, futuros=None, cambios: dict | None = None,
+                    gap: float = 0.0):
+    """Entrena las previsiones con lo conocido el domingo y simula la semana.
+
+    `cambios` modifica la planta tipo (por ejemplo, {"coste_arranque_eur": 20000}).
+    """
+    from dataclasses import replace
+
+    from . import semana as modulo_semana
     from .semana import cargar_semana, intensidad_semana, simular_semana
 
+    modulo_semana.GAP = gap
     previsores = previsores_semana(lunes, M, fechas, futuros)
     semana = cargar_semana(lunes)
-    tabla, _, errores = simular_semana(Planta(), semana, M, fechas, previsores, fraccion_cara=fraccion_cara,
+    planta = replace(Planta(), **(cambios or {}))
+    tabla, _, errores = simular_semana(planta, semana, M, fechas, previsores, fraccion_cara=fraccion_cara,
                                        intensidad=intensidad_semana(semana))
     tabla.insert(0, "lunes", lunes)
     errores.insert(0, "lunes", lunes)
