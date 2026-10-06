@@ -106,7 +106,7 @@ with pestana_semana:
     st.markdown(
         f"**Semana del {lunes:%d-%m-%Y}.** Cada día a las 12:00 Txanda conoce los precios de mañana, prevé el resto de la "
         f"semana con *{nombre_prevision(prevision)}*, fija las coladas de mañana y vuelve a planificar al día siguiente. "
-        f"Todas las estrategias producen {7 * coladas} coladas ({7 * coladas * planta.toneladas_colada:,.0f} t).".replace(",", ".")
+        f"Todas las estrategias producen {7 * coladas} coladas ({euros(7 * coladas * planta.toneladas_colada)[:-2]} t)."
     )
 
     fila, base, regla = tabla.loc[txanda], tabla.loc["A"], tabla.loc["B"]
