@@ -1,5 +1,5 @@
-"""Lo que necesita el prototipo: planificar una semana con una previsión elegida y
-traducir el plan a una orden de fabricación legible."""
+"""Lo que necesita el prototipo: planificar una semana, comparar la previsión elegida con
+todas las demás estrategias y traducir el plan a una orden de fabricación legible."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ import pandas as pd
 from .milp import Plan, potencia, secuencias
 from .planta import DT_H, Planta
 from .precios import a_cuartos
-from .prevision import PrevisorFuturos, PrevisorLEAR, PrevisorML, ingenua
+from .prevision import ingenua
 from .semana import NOMBRES_SEMANA, Semana, intensidad_semana, simular_semana
 
 DIAS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
@@ -28,24 +28,23 @@ class ResultadoSemana:
     prevision_domingo: np.ndarray  # previsión hecha el domingo, en los cuartos reales de la semana
 
 
-def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str, futuros=None) -> ResultadoSemana:
-    """Simula la semana con las estrategias de referencia y Txanda con la previsión elegida."""
-    clave = PREVISIONES[prevision]
-    pos = fechas.get_loc(pd.Timestamp(semana.lunes))
-    if clave == "F":
-        if futuros is None or not len(futuros):
-            raise ValueError("No hay futuros de OMIP descargados para esta semana")
-        previsor = PrevisorFuturos(M, fechas, futuros)
-    elif clave == "L":
-        previsor = PrevisorLEAR(M, fechas).entrenar(pos)
-    elif clave == "D":
-        previsor = PrevisorML(M, fechas).entrenar(pos)
-    else:
-        previsor = None
-    previsores = {clave: previsor} if previsor is not None else {}
-    tabla, planes, _ = simular_semana(planta, semana, M, fechas, previsores, intensidad=intensidad_semana(semana))
+def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str, futuros=None,
+                      con_emisiones: bool = False) -> ResultadoSemana:
+    """Simula la semana con todas las estrategias disponibles; Txanda es la de la previsión elegida.
 
-    prever = previsor.predecir if previsor is not None else (lambda p, k: ingenua(M, p, k))
+    Sin futuros de OMIP son siete estrategias (A, B, OD, C, L, D, O); con ellos, nueve (F y H).
+    """
+    from .backtest import previsores_semana
+
+    clave = PREVISIONES[prevision]
+    if clave == "F" and (futuros is None or not len(futuros)):
+        raise ValueError("No hay futuros de OMIP descargados para esta semana")
+    pos = fechas.get_loc(pd.Timestamp(semana.lunes))
+    previsores = previsores_semana(semana.lunes, M, fechas, futuros)
+    intensidad = intensidad_semana(semana) if con_emisiones else None
+    tabla, planes, _ = simular_semana(planta, semana, M, fechas, previsores, intensidad=intensidad)
+
+    prever = previsores[clave].predecir if clave in previsores else (lambda p, k: ingenua(M, p, k))
     partes = [semana.dias[0].to_numpy(dtype=float)]
     partes += [a_cuartos(prever(pos - 1, i + 1), semana.dias[i].index) for i in range(1, 7)]
     return ResultadoSemana(tabla, planes, semana, clave, np.concatenate(partes))
