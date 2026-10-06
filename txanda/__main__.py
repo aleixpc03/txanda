@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -185,6 +186,8 @@ def orden_semanas(args):
     sufijo = f"{lunes[0]:%Y%m%d}_{lunes[-1]:%Y%m%d}"
     ruta_resultados = carpeta / f"{prefijo}_{sufijo}.csv"
     resultados.to_csv(ruta_resultados, index=False)
+    if args.etiqueta:
+        (carpeta / f"{args.etiqueta}_parametros.json").write_text(json.dumps({"cambios": cambios, "gap": args.gap}, indent=2))
     errores.to_csv(carpeta / f"{prefijo}_{sufijo}_errores.csv", index=False)
     if cambios:
         print("Planta: " + ", ".join(f"{k} = {v}" for k, v in cambios.items()) + "\n")
@@ -369,7 +372,19 @@ def orden_publicar(args):
                                  etiquetas_x=[f"{r.replace('-', '–')} coladas" for r in valores.index],
                                  eje_x="coladas permitidas cada día (126 a la semana)",
                                  eje_y="% de ahorro frente al horario fijo A", techo=valores["O"])
-    print(f"Resultados públicos en {destino}: {', '.join(sorted(p.name for p in destino.iterdir()))}")
+    # Escenarios de planta: mismos resultados sin F ni H, con sus parámetros
+    escenarios = destino / "escenarios"
+    for fichero in sorted((SALIDAS / "escenarios").glob("*_semanas_*.csv")):
+        if fichero.stem.endswith("_errores"):
+            continue
+        etiqueta = fichero.stem.split("_semanas_")[0]
+        escenarios.mkdir(exist_ok=True)
+        datos = pd.read_csv(fichero)
+        datos[~datos.clave.isin(sin_omip)].to_csv(escenarios / f"{etiqueta}.csv", index=False)
+        parametros = SALIDAS / "escenarios" / f"{etiqueta}_parametros.json"
+        if parametros.exists():
+            (escenarios / f"{etiqueta}.json").write_text(parametros.read_text())
+    print(f"Resultados públicos en {destino}: {', '.join(sorted(str(p.relative_to(destino)) for p in destino.rglob('*') if p.is_file()))}")
 
 
 def main(argv=None):

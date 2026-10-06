@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -147,6 +148,51 @@ with pestana_semana:
                        file_name=f"txanda_orden_{lunes:%Y%m%d}.csv", mime="text/csv")
 
 # ---------------------------------------------------------------- resultados del año
+def resumen_anual(resultados: pd.DataFrame, k_eur: bool = False) -> pd.DataFrame:
+    """Tabla del backtest como la tabla 5 de la memoria; con `k_eur`, también el ahorro anual en k€."""
+    sumas = ["coste_total_eur", "toneladas"] + (["emisiones_t"] if "emisiones_t" in resultados and MOSTRAR_CO2 else [])
+    total = resultados.groupby("clave", sort=False)[sumas].sum()
+    a, o = total.loc["A", "coste_total_eur"], total.loc["O", "coste_total_eur"]
+    resumen = pd.DataFrame({
+        "Estrategia": resultados.groupby("clave", sort=False).estrategia.first(),
+        "Coste (M€)": total.coste_total_eur / 1e6,
+        "€/t": total.coste_total_eur / total.toneladas,
+        "Ahorro frente a A (%)": 100 * (a - total.coste_total_eur) / a,
+        "Ahorro máximo capturado (%)": 100 * (a - total.coste_total_eur) / (a - o),
+    })
+    if k_eur:
+        resumen.insert(4, "Ahorro frente a A (k€/año)", (a - total.coste_total_eur) * 52 / resultados.lunes.nunique() / 1000)
+    if "emisiones_t" in total:
+        resumen["kg CO₂/t"] = 1000 * total.emisiones_t / total.toneladas
+        resumen["Emisiones frente a A (%)"] = 100 * (total.emisiones_t / total.loc["A", "emisiones_t"] - 1)
+    return resumen
+
+
+def mostrar_tabla(resumen: pd.DataFrame):
+    formatos = {"Coste (M€)": "%.2f", "€/t": "%.2f", "Ahorro frente a A (k€/año)": "%.0f"}
+    st.dataframe(resumen, width="stretch", column_config={
+        c: st.column_config.NumberColumn(format=formatos.get(c, "%.1f")) for c in resumen.columns if c != "Estrategia"})
+
+
+def describir_escenario(cambios: dict) -> str:
+    """Frase con lo que cambia el escenario respecto a la planta tipo."""
+    base, partes = Planta(), []
+    if "coste_arranque_eur" in cambios:
+        partes.append(f"arranques de {euros(cambios['coste_arranque_eur'])} ({euros(base.coste_arranque_eur)} en el caso base)")
+    if "secuencia_min" in cambios:
+        partes.append(f"secuencias de al menos {cambios['secuencia_min']} coladas ({base.secuencia_min})")
+    if "secuencia_max" in cambios:
+        partes.append(f"secuencias de como mucho {cambios['secuencia_max']} coladas ({base.secuencia_max})")
+    if "holgura_menos" in cambios or "holgura_mas" in cambios:
+        minimo = base.coladas_dia - cambios.get("holgura_menos", base.holgura_menos)
+        maximo = base.coladas_dia + cambios.get("holgura_mas", base.holgura_mas)
+        partes.append(f"entre {minimo} y {maximo} coladas al día ({base.coladas_dia_min}–{base.coladas_dia_max})")
+    if "cambio_secuencia_cuartos" in cambios:
+        minutos = 15 * cambios["cambio_secuencia_cuartos"]
+        partes.append(f"{minutos} minutos de cambio de artesa ({15 * base.cambio_secuencia_cuartos} minutos)")
+    return ", ".join(partes)
+
+
 with pestana_anio:
     ficheros = [f for f in sorted(SALIDAS.glob("semanas_*_*.csv")) if not f.stem.endswith("_errores")] if OMIP else []
     ficheros = ficheros or sorted(PUBLICOS.glob("semanas.csv"))
@@ -156,24 +202,29 @@ with pestana_anio:
         resultados = pd.read_csv(ficheros[-1], parse_dates=["lunes"])
         # Como la tabla 5 de la memoria: sin el híbrido H, y sin F si no se usan los futuros de OMIP.
         resultados = resultados[~resultados.clave.isin(["H"] if OMIP else ["F", "H"])]
-        sumas = ["coste_total_eur", "toneladas"] + (["emisiones_t"] if "emisiones_t" in resultados and MOSTRAR_CO2 else [])
-        total = resultados.groupby("clave", sort=False)[sumas].sum()
-        a, o = total.loc["A", "coste_total_eur"], total.loc["O", "coste_total_eur"]
-        resumen = pd.DataFrame({
-            "Estrategia": resultados.groupby("clave", sort=False).estrategia.first(),
-            "Coste (M€)": total.coste_total_eur / 1e6,
-            "€/t": total.coste_total_eur / total.toneladas,
-            "Ahorro frente a A (%)": 100 * (a - total.coste_total_eur) / a,
-            "Ahorro máximo capturado (%)": 100 * (a - total.coste_total_eur) / (a - o),
-        })
-        if "emisiones_t" in total:
-            resumen["kg CO₂/t"] = 1000 * total.emisiones_t / total.toneladas
-            resumen["Emisiones frente a A (%)"] = 100 * (total.emisiones_t / total.loc["A", "emisiones_t"] - 1)
         st.markdown(f"**Backtest de {resultados.lunes.nunique()} semanas** "
                     f"({resultados.lunes.min():%d-%m-%Y} – {resultados.lunes.max() + pd.Timedelta(days=6):%d-%m-%Y}), "
                     "planta tipo, caso base.")
-        st.dataframe(resumen, width="stretch", column_config={
-            c: st.column_config.NumberColumn(format="%.2f" if c in ("Coste (M€)", "€/t") else "%.1f") for c in resumen.columns if c != "Estrategia"})
+        mostrar_tabla(resumen_anual(resultados))
+
+        # Escenarios de planta publicados con `python -m txanda publicar`
+        for fichero in sorted((PUBLICOS / "escenarios").glob("*.csv")):
+            escenario = pd.read_csv(fichero, parse_dates=["lunes"])
+            escenario = escenario[~escenario.clave.isin(["F", "H"])]
+            parametros = fichero.with_suffix(".json")
+            cambios = json.loads(parametros.read_text())["cambios"] if parametros.exists() else {}
+            st.subheader(f"Escenario {fichero.stem.replace('_', ' ')}")
+            st.markdown(f"Mismo backtest de {escenario.lunes.nunique()} semanas con otra planta"
+                        + (f": {describir_escenario(cambios)}." if cambios else "."))
+            mostrar_tabla(resumen_anual(escenario, k_eur=True))
+            nota = ("Con otros costes de arranque el coste por tonelada cambia mucho, así que los porcentajes no se pueden "
+                    "comparar con el caso base: para comparar escenarios, mejor el ahorro en k€ al año.")
+            if "optimo_demostrado" in escenario and (~escenario.optimo_demostrado).any():
+                sin_optimo = int((~escenario.optimo_demostrado).sum())
+                nota += (f" En {sin_optimo} de {len(escenario)} problemas el solver agotó el tiempo y se usó la mejor solución "
+                         "encontrada, así que la parte del ahorro máximo es aproximada.")
+            st.caption(nota)
+
         for nombre, titulo in [("sensibilidad_arranque", "Sensibilidad al coste de arranque"),
                                ("sensibilidad_flexibilidad", "Sensibilidad a la flexibilidad diaria")]:
             imagenes = (sorted(SALIDAS.glob(f"{nombre}_*.png")) if OMIP else []) or sorted(PUBLICOS.glob(f"{nombre}.png"))

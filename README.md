@@ -198,6 +198,11 @@ porque lo que ahorra en energía lo pierde en arranques. Con estos parámetros e
 más lento: se usó `--gap 0.0001` y en 42 de 357 problemas se agotó el tiempo y se tomó la
 mejor solución encontrada (el resumen lo indica).
 
+La app lo muestra en la pestaña «Resultados del año», debajo de la tabla del caso base, con
+el ahorro en k€ al año (los porcentajes no se comparan entre escenarios porque el coste por
+tonelada cambia con el de arranque). `publicar` copia a `resultados/escenarios/` cada escenario
+de `salidas/escenarios/` con sus parámetros, y la app enseña todos los que encuentre.
+
 ## Supuestos de la planta tipo (`txanda/planta.py`)
 
 | Parámetro | Valor | Nota |
