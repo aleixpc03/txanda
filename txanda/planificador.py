@@ -79,3 +79,50 @@ def serie_potencia(planta: Planta, semana: Semana, planes: dict[str, Plan], clav
                        "estrategia": f"{c} · {NOMBRES_SEMANA[c]}"}) for c in claves],
         ignore_index=True,
     )
+
+
+# Colores por estrategia (paleta de referencia, orden fijo) y gris para las referencias
+COLORES = {"B": "#2a78d6", "OD": "#eb6834", "C": "#1baf7a", "F": "#eda100", "L": "#e87ba4", "D": "#008300"}
+GRIS, GRIS_OSCURO, AZUL = "#8a8984", "#52514e", "#2a78d6"
+# Día de la semana en castellano para los ejes (en Vega, day() empieza en domingo)
+DIA_EJE = "['dom','lun','mar','mié','jue','vie','sáb'][day(datum.value)] + ' ' + date(datum.value)"
+
+
+def nombre_prevision(prevision: str) -> str:
+    """«LEAR» se queda en mayúsculas; el resto, en minúscula dentro de una frase."""
+    return prevision if prevision.isupper() else prevision.lower()
+
+
+def grafico_semana(planta: Planta, r: ResultadoSemana, prevision: str):
+    """Precio real y previsión del domingo; debajo, potencia del horno con Txanda, el horario fijo y el oráculo."""
+    import altair as alt
+
+    cuartos = r.semana.cuartos.tz_localize(None)
+    serie_prevision = f"Previsión del domingo ({nombre_prevision(prevision)})"
+    precio = pd.concat([
+        pd.DataFrame({"hora": cuartos, "€/MWh": r.semana.precios, "serie": "Precio real"}),
+        pd.DataFrame({"hora": cuartos, "€/MWh": r.prevision_domingo, "serie": serie_prevision}),
+    ])
+    medianoches = [d.index[0].tz_localize(None).isoformat() for d in r.semana.dias]  # una marca por día
+    x = alt.X("hora:T", title=None, axis=alt.Axis(values=medianoches, labelExpr=DIA_EJE, labelAngle=0, labelAlign="left"))
+    tooltip_hora = alt.Tooltip("hora:T", title="hora", format="%d-%m %H:%M")
+    series = ["Precio real", serie_prevision]
+    grafico_precio = alt.Chart(precio).mark_line(strokeWidth=1.6, interpolate="step-after").encode(
+        x=x, y=alt.Y("€/MWh:Q"),
+        color=alt.Color("serie:N", scale=alt.Scale(domain=series, range=[AZUL, GRIS]), legend=alt.Legend(orient="top", title=None)),
+        strokeDash=alt.StrokeDash("serie:N", scale=alt.Scale(domain=series, range=[[1, 0], [5, 3]]), legend=None),
+        tooltip=[tooltip_hora, alt.Tooltip("serie:N"), alt.Tooltip("€/MWh:Q", format=".1f")],
+    ).properties(height=210)
+
+    claves = [r.clave_txanda, "A", "O"]
+    nombres = [f"{c} · {NOMBRES_SEMANA[c]}" for c in claves]
+    grafico_potencia = alt.Chart(serie_potencia(planta, r.semana, r.planes, claves)).mark_area(
+        interpolate="step-after", opacity=0.85).encode(
+        x=x, y=alt.Y("MW:Q", title="MW"),
+        color=alt.Color("estrategia:N", scale=alt.Scale(domain=nombres, range=[COLORES.get(r.clave_txanda, AZUL), GRIS, GRIS_OSCURO]),
+                        legend=None),
+        row=alt.Row("estrategia:N", sort=nombres, title=None, header=alt.Header(labelAngle=0, labelAlign="left", labelAnchor="start")),
+        tooltip=[tooltip_hora, alt.Tooltip("estrategia:N"), alt.Tooltip("MW:Q", format=".0f")],
+    ).properties(height=70)
+    # Escalas de color independientes: si se comparten, las series de precio quedan fuera del dominio y no se dibujan.
+    return alt.vconcat(grafico_precio, grafico_potencia).resolve_scale(x="shared", color="independent", strokeDash="independent")

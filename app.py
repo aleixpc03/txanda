@@ -9,21 +9,18 @@ import os
 from dataclasses import replace
 from pathlib import Path
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
 from txanda.omip import tabla_futuros
-from txanda.planificador import PREVISIONES, orden_fabricacion, planificar_semana, serie_potencia
+from txanda.planificador import PREVISIONES, grafico_semana, nombre_prevision, orden_fabricacion, planificar_semana
 from txanda.planta import Planta
 from txanda.precios import matriz_diaria
-from txanda.semana import NOMBRES_SEMANA, cargar_semana
+from txanda.semana import cargar_semana
 
 PRIMER_LUNES, ULTIMO_LUNES = dt.date(2025, 10, 6), dt.date(2026, 9, 21)
 HISTORIA = pd.Timedelta(days=400)
 TURNOS = {"Tres turnos (24 h)": ((0.0, 24.0),), "Dos turnos (06:00–22:00)": ((6.0, 22.0),)}
-COLORES = {"B": "#2a78d6", "OD": "#eb6834", "C": "#1baf7a", "F": "#eda100", "L": "#e87ba4", "D": "#008300"}
-GRIS = "#8a8984"
 RAIZ = Path(__file__).resolve().parent
 SALIDAS, PUBLICOS = RAIZ / "salidas", RAIZ / "resultados"
 
@@ -108,7 +105,7 @@ with pestana_semana:
     tabla, txanda = r.tabla, r.clave_txanda
     st.markdown(
         f"**Semana del {lunes:%d-%m-%Y}.** Cada día a las 12:00 Txanda conoce los precios de mañana, prevé el resto de la "
-        f"semana con *{prevision.lower()}*, fija las coladas de mañana y vuelve a planificar al día siguiente. "
+        f"semana con *{nombre_prevision(prevision)}*, fija las coladas de mañana y vuelve a planificar al día siguiente. "
         f"Todas las estrategias producen {7 * coladas} coladas ({7 * coladas * planta.toneladas_colada:,.0f} t).".replace(",", ".")
     )
 
@@ -120,29 +117,8 @@ with pestana_semana:
     k3.metric("Ahorro frente a parar en horas caras", f"{100 * (regla.coste_total_eur - fila.coste_total_eur) / regla.coste_total_eur:.1f} %".replace(".", ","))
     k4.metric("Parte del ahorro máximo capturado", f"{fila.captura_pct:.0f} %", help="0 % = horario fijo, 100 % = oráculo que conoce toda la semana de antemano.")
 
-    # Precio real y previsión del domingo; debajo, potencia del horno con cada plan.
-    cuartos = r.semana.cuartos.tz_localize(None)
-    precio = pd.concat([
-        pd.DataFrame({"hora": cuartos, "€/MWh": r.semana.precios, "serie": "Precio real"}),
-        pd.DataFrame({"hora": cuartos, "€/MWh": r.prevision_domingo, "serie": f"Previsión del domingo ({prevision.lower()})"}),
-    ])
-    x = alt.X("hora:T", title=None, axis=alt.Axis(format="%a %d", labelAngle=0))
-    grafico_precio = alt.Chart(precio).mark_line(strokeWidth=1.6, interpolate="step-after").encode(
-        x=x, y=alt.Y("€/MWh:Q"),
-        color=alt.Color("serie:N", scale=alt.Scale(range=["#2a78d6", GRIS]), legend=alt.Legend(orient="top", title=None)),
-        strokeDash=alt.StrokeDash("serie:N", scale=alt.Scale(range=[[1, 0], [5, 3]]), legend=None),
-        tooltip=[alt.Tooltip("hora:T", format="%a %d %H:%M"), alt.Tooltip("serie:N"), alt.Tooltip("€/MWh:Q", format=".1f")],
-    ).properties(height=210)
-    claves = [txanda, "A", "O"]
-    potencia = serie_potencia(planta, r.semana, r.planes, claves)
-    nombres = [f"{c} · {NOMBRES_SEMANA[c]}" for c in claves]
-    grafico_potencia = alt.Chart(potencia).mark_area(interpolate="step-after", opacity=0.85).encode(
-        x=x, y=alt.Y("MW:Q", title="MW"),
-        color=alt.Color("estrategia:N", scale=alt.Scale(domain=nombres, range=[COLORES.get(txanda, "#2a78d6"), GRIS, "#52514e"]), legend=None),
-        row=alt.Row("estrategia:N", sort=nombres, title=None, header=alt.Header(labelAngle=0, labelAlign="left", labelAnchor="start")),
-        tooltip=[alt.Tooltip("hora:T", format="%a %d %H:%M"), alt.Tooltip("estrategia:N"), alt.Tooltip("MW:Q", format=".0f")],
-    ).properties(height=70)
-    st.altair_chart(alt.vconcat(grafico_precio, grafico_potencia).resolve_scale(x="shared"), width="stretch")
+    # Precio real y previsión del domingo; debajo, potencia del horno con Txanda, el horario fijo y el oráculo.
+    st.altair_chart(grafico_semana(planta, r, prevision), width="stretch")
 
     st.subheader("Comparación de estrategias")
     columnas = ["estrategia", "coste_total_eur", "eur_por_t", "arranques", "ahorro_vs_A_pct", "captura_pct"]
