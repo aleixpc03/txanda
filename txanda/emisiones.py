@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -99,9 +100,26 @@ def intensidad_vector(generacion: pd.DataFrame, oficiales: pd.Series) -> np.ndar
     return emisiones / (generacion["dem"].to_numpy() * 0.25)
 
 
+@lru_cache(maxsize=1)
+def _intensidad_incluida() -> pd.Series | None:
+    from .precalculo import cargar_intensidad
+
+    return cargar_intensidad()
+
+
 def intensidad_dia(fecha, cuartos: pd.DatetimeIndex, cache: Path = CACHE) -> np.ndarray:
-    """Intensidad de emisiones en los cuartos de hora reales del día."""
+    """Intensidad de emisiones en los cuartos de hora reales del día.
+
+    Si la generación del día no está descargada, usa antes la intensidad que viene con el
+    repositorio (`precalculo/`), calculada igual con los mismos datos de REE.
+    """
     fecha = pd.Timestamp(fecha)
+    if cache == CACHE and not (cache / f"generacion_{fecha:%Y%m%d}.csv").exists():
+        incluida = _intensidad_incluida()
+        if incluida is not None:
+            dia = incluida[(incluida.index >= cuartos[0]) & (incluida.index <= cuartos[-1])]
+            if len(dia) == len(cuartos):
+                return dia.to_numpy(dtype=float)
     oficiales = emisiones_mes(fecha.to_period("M"), cache).loc[f"{fecha:%Y-%m-%d}"]
     return a_cuartos(intensidad_vector(generacion_dia(fecha, cache), oficiales), cuartos)
 

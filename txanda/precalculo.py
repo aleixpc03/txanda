@@ -1,5 +1,6 @@
-"""Precálculo para la app publicada: los precios de OMIE y las previsiones de las semanas del
-backtest, para no descargar ni reentrenar nada en un servidor con poca CPU.
+"""Precálculo para la app publicada: los precios de OMIE, la intensidad de CO₂ de Red Eléctrica
+y las previsiones de las semanas del backtest, para no descargar ni reentrenar nada en un
+servidor con poca CPU.
 
 Las previsiones se guardan tal como las hace cada previsor con lo conocido el día de decisión,
 así que la app resuelve exactamente lo mismo que el cálculo en vivo; solo se ahorra el tiempo.
@@ -17,6 +18,7 @@ from .prevision import HORIZONTES, PrevisorLEAR, Vigilancia
 CARPETA = Path(__file__).resolve().parent.parent / "precalculo"
 PRECIOS = CARPETA / "precios_omie.csv.gz"
 PREVISIONES = CARPETA / "previsiones.npz"
+INTENSIDAD = CARPETA / "intensidad_co2.csv.gz"
 HISTORIA_APP = pd.Timedelta(days=400)  # la que carga app.py antes de cada lunes
 
 
@@ -72,6 +74,28 @@ def guardar_precios(desde, hasta, ruta: Path = PRECIOS) -> Path:
     ruta.parent.mkdir(exist_ok=True)
     serie.tz_convert("UTC").round(4).to_csv(ruta)
     return ruta
+
+
+def guardar_intensidad(desde, hasta, ruta: Path = INTENSIDAD) -> Path:
+    """Intensidad de emisiones (tCO₂-eq/MWh) en los cuartos reales de cada día, de datos de REE."""
+    from .emisiones import intensidad_dia
+    from .precios import cuartos_del_dia, dias
+
+    partes = []
+    for fecha in dias(desde, hasta):
+        cuartos = cuartos_del_dia(fecha)
+        partes.append(pd.Series(intensidad_dia(fecha, cuartos), index=cuartos, name="tco2_mwh"))
+    ruta.parent.mkdir(exist_ok=True)
+    pd.concat(partes).tz_convert("UTC").round(6).to_csv(ruta)
+    return ruta
+
+
+def cargar_intensidad(ruta: Path = INTENSIDAD) -> pd.Series | None:
+    if not ruta.exists():
+        return None
+    serie = pd.read_csv(ruta, index_col=0).iloc[:, 0]
+    serie.index = pd.to_datetime(serie.index, utc=True)
+    return serie
 
 
 def guardar_previsiones(grabadas: dict, ruta: Path = PREVISIONES) -> Path:

@@ -400,9 +400,10 @@ def orden_publicar(args):
 
 
 def orden_precalcular(args):
-    """Guarda en precalculo/ los precios de OMIE y las previsiones de cada semana, con la misma
-    matriz que carga la app, para que la app publicada no descargue ni entrene nada."""
-    from .precalculo import HISTORIA_APP, grabar_semana_app, guardar_precios, guardar_previsiones
+    """Guarda en precalculo/ los precios de OMIE, las previsiones de cada semana (con la misma
+    matriz que carga la app) y la intensidad de CO₂, para que la app publicada no descargue
+    ni entrene nada."""
+    from .precalculo import HISTORIA_APP, grabar_semana_app, guardar_intensidad, guardar_precios, guardar_previsiones
 
     lunes = pd.date_range(args.desde, args.hasta, freq="W-MON")
     ruta_precios = guardar_precios(lunes[0] - HISTORIA_APP, lunes[-1] + pd.Timedelta(days=6))
@@ -410,7 +411,8 @@ def orden_precalcular(args):
     with ProcessPoolExecutor(max_workers=args.procesos) as pool:
         grabadas = dict(zip(lunes, pool.map(grabar_semana_app, lunes)))
     ruta_previsiones = guardar_previsiones(grabadas)
-    print(f"{len(lunes)} semanas: {ruta_precios} y {ruta_previsiones}")
+    ruta_intensidad = guardar_intensidad(lunes[0], lunes[-1] + pd.Timedelta(days=6))
+    print(f"{len(lunes)} semanas: {ruta_precios}, {ruta_previsiones} y {ruta_intensidad}")
 
 
 def main(argv=None):

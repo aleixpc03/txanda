@@ -46,10 +46,12 @@ en `salidas/`. La app resuelve primero lo que necesitan los indicadores, el grá
 orden (horario fijo, paradas en horas caras, oráculo y Txanda: unos 4–10 s) y después el
 resto de la comparación, que aparece en su sitio cuando acaba. Todo queda en caché.
 
-La app sigue a la memoria: cuatro indicadores, la comparación con todas las estrategias del
-benchmark (siete; nueve si se activan los futuros de OMIP con `TXANDA_OMIP=1`) y la tabla del
-año como la tabla 5. Las emisiones están calculadas pero ocultas (`MOSTRAR_CO2 = False` en
-`app.py`) porque la memoria las deja como trabajo pendiente.
+La app sigue a la memoria: cinco indicadores (coste, ahorro frente al horario fijo y frente a parar
+en horas caras, parte del ahorro máximo capturada y emisiones de CO₂), la comparación con
+todas las estrategias del benchmark (siete; nueve si se activan los futuros de OMIP con
+`TXANDA_OMIP=1`) y la tabla del año como la tabla 4. Las emisiones usan la intensidad media
+del sistema peninsular de Red Eléctrica en cada cuarto de hora; se ocultan con
+`MOSTRAR_CO2 = False` en `app.py`.
 
 Con Docker (montando las carpetas de datos y resultados):
 
@@ -61,8 +63,9 @@ docker run -p 8501:8501 -v "$PWD/datos:/app/datos" -v "$PWD/salidas:/app/salidas
 ## Publicar en Streamlit Community Cloud
 
 La app publicada no descarga ni entrena nada: usa `precalculo/`, que viene en el repositorio
-con los precios de OMIE (`precios_omie.csv.gz`, de septiembre de 2024 a septiembre de 2026)
-y las previsiones de LEAR y del aprendizaje automático de las 51 semanas (`previsiones.npz`),
+con los precios de OMIE (`precios_omie.csv.gz`, de septiembre de 2024 a septiembre de 2026),
+la intensidad de CO₂ de Red Eléctrica (`intensidad_co2.csv.gz`, de octubre de 2025 a
+septiembre de 2026) y las previsiones de LEAR y del aprendizaje automático de las 51 semanas (`previsiones.npz`),
 hechas cada una con lo que se sabía el día de decisión. Son las mismas previsiones que el
 cálculo en vivo, así que los resultados coinciden con el backtest; solo resuelve los MILP, que
 dependen de los parámetros elegidos. Sin `precalculo/`, o con `TXANDA_OMIP=1`, la app entrena

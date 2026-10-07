@@ -34,8 +34,9 @@ def omip_disponible() -> bool:
 
 OMIP = omip_disponible()
 OPCIONES = [p for p in PREVISIONES if OMIP or PREVISIONES[p] != "F"]
-# La memoria deja las emisiones como trabajo pendiente: la app no las muestra hasta que la memoria las incluya.
-MOSTRAR_CO2 = False
+# Emisiones con la intensidad media de Red Eléctrica (apartado 5.4 de la memoria): quinto indicador
+# y columnas de CO₂ en las tablas. En la app publicada salen de precalculo/.
+MOSTRAR_CO2 = True
 COLUMNAS_ORDEN = ["empieza", "termina", "coladas", "toneladas", "energía (MWh)", "precio medio (€/MWh)"]
 DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
@@ -129,12 +130,19 @@ with pestana_semana:
                        "ingenua. Si faltan datos, Txanda vuelve al óptimo diario; si LEAR acierta menos que la ingenua, avisa.")
 
     fila, base, regla = tabla.loc[txanda], tabla.loc["A"], tabla.loc["B"]
-    k1, k2, k3, k4 = st.columns(4)
+    k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Coste con Txanda", euros(fila.coste_total_eur), delta=euros(fila.coste_total_eur - base.coste_total_eur) + " frente al horario fijo",
               delta_color="inverse")
     k2.metric("Ahorro frente al horario fijo", f"{fila.ahorro_vs_A_pct:.1f} %".replace(".", ","))
     k3.metric("Ahorro frente a parar en horas caras", f"{100 * (regla.coste_total_eur - fila.coste_total_eur) / regla.coste_total_eur:.1f} %".replace(".", ","))
     k4.metric("Parte del ahorro máximo capturado", f"{fila.captura_pct:.0f} %", help="0 % = horario fijo, 100 % = oráculo que conoce toda la semana de antemano.")
+    if MOSTRAR_CO2 and "kgco2_por_t" in tabla:
+        k5.metric("Emisiones de CO₂", f"{fila.kgco2_por_t:.1f} kg/t".replace(".", ","), delta_color="inverse",
+                  delta=f"{fila.emisiones_vs_A_pct:+.1f} % frente al horario fijo".replace(".", ","),
+                  help="Emisiones del consumo del horno con la intensidad media del sistema eléctrico peninsular "
+                       "en cada cuarto de hora (Red Eléctrica). Txanda no las minimiza: solo minimiza el coste.")
+    elif MOSTRAR_CO2:
+        k5.metric("Emisiones de CO₂", "sin datos", help="Faltan los datos de Red Eléctrica de esta semana.")
 
     # Precio real y previsión del domingo; debajo, potencia del horno con Txanda, el horario fijo y el oráculo.
     st.altair_chart(grafico_semana(planta, r, prevision), width="stretch")
@@ -173,7 +181,7 @@ with comparacion:
 
 # ---------------------------------------------------------------- resultados del año
 def resumen_anual(resultados: pd.DataFrame, k_eur: bool = False) -> pd.DataFrame:
-    """Tabla del backtest como la tabla 5 de la memoria; con `k_eur`, también el ahorro anual en k€."""
+    """Tabla del backtest como la tabla 4 de la memoria; con `k_eur`, también el ahorro anual en k€."""
     sumas = ["coste_total_eur", "toneladas"] + (["emisiones_t"] if "emisiones_t" in resultados and MOSTRAR_CO2 else [])
     total = resultados.groupby("clave", sort=False)[sumas].sum()
     a, o = total.loc["A", "coste_total_eur"], total.loc["O", "coste_total_eur"]
@@ -224,7 +232,7 @@ with pestana_anio:
         st.info("Aún no hay backtest. Ejecútalo con `python -m txanda semanas 2025-10-06 2026-09-21`.")
     else:
         resultados = pd.read_csv(ficheros[-1], parse_dates=["lunes"])
-        # Como la tabla 5 de la memoria: sin el híbrido H, y sin F si no se usan los futuros de OMIP.
+        # Como la tabla 4 de la memoria: sin el híbrido H, y sin F si no se usan los futuros de OMIP.
         resultados = resultados[~resultados.clave.isin(["H"] if OMIP else ["F", "H"])]
         st.markdown(f"**Backtest de {resultados.lunes.nunique()} semanas** "
                     f"({resultados.lunes.min():%d-%m-%Y} – {resultados.lunes.max() + pd.Timedelta(days=6):%d-%m-%Y}), "
