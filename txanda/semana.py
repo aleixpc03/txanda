@@ -12,6 +12,8 @@ coladas que empiezan en D+1 y repiten al día siguiente.
     L   Semanal con previsión LEAR (LASSO autorregresivo). Mismos cupos que C.
     H   Semanal con LEAR a dos días y futuros de OMIP desde tres. Mismos cupos que C.
     D   Semanal con previsión de aprendizaje automático. Mismos cupos que C.
+    LR  Como L, pero el día en que no se puede usar la previsión (faltan datos o no se puede
+        calcular) vuelve al óptimo diario. Mismos cupos que C.
     O   Oráculo: conoce toda la semana de antemano. Mismos cupos que C. No es implementable.
 
 Todas producen lo mismo y se evalúan igual: energía a precio real más arranques.
@@ -38,6 +40,7 @@ NOMBRES_SEMANA = {
     "L": "Semanal, previsión LEAR",
     "H": "Semanal, híbrido LEAR + futuros",
     "D": "Semanal, previsión ML",
+    "LR": "Semanal, LEAR con vuelta al óptimo diario",
     "O": "Oráculo semanal",
 }
 
@@ -116,6 +119,38 @@ def _rodar(planta: Planta, semana: Semana, disponible, cupos, senal_paso, dias_v
     return Plan(comprometidas, estado, segundos)
 
 
+def reparto(quedan: int, dias: int) -> list[int]:
+    """Reparte `quedan` coladas entre `dias` días a partes iguales; las que sobran, a los primeros."""
+    base, resto = divmod(quedan, dias)
+    return [base + (i < resto) for i in range(dias)]
+
+
+def _rodar_con_respaldo(planta: Planta, semana: Semana, disponible, cupos, senal_paso, senal_diaria, motivo_paso) -> Plan:
+    """Como `_rodar` con cupos semanales, pero vuelve al óptimo diario el día en que
+    `motivo_paso(j)` devuelve un motivo.
+
+    Ese día no se usa ninguna previsión: las coladas que quedan de la semana se reparten a
+    partes iguales entre los días que faltan y las de mañana se colocan con su precio real,
+    mirando un día más allá para las secuencias que cruzan medianoche, como el óptimo diario.
+    Al día siguiente se vuelve a comprobar la previsión.
+    """
+    lim, comprometidas, segundos, estado, respaldo = semana.limites, (), 0.0, "Optimal", []
+    for j in range(7):
+        motivo = motivo_paso(j)
+        if motivo is None:
+            fin, senal, cupos_paso = lim[7], senal_paso(j), list(cupos)
+        else:
+            respaldo.append((j, motivo))
+            fin, senal = lim[min(7, j + 2)], senal_diaria(j)
+            partes = reparto(7 * planta.coladas_dia - len(comprometidas), 7 - j)
+            cupos_paso = [Cupo(lim[j + i], lim[j + i + 1], n, n) for i, n in enumerate(partes) if lim[j + i + 1] <= fin]
+        plan = _resolver(planta, senal[:fin], disponible[:fin], cupos_paso, fijadas=(lim[j], comprometidas))
+        segundos += plan.segundos
+        estado = estado if plan.estado == "Optimal" else plan.estado
+        comprometidas = tuple(s for s in plan.inicios if s < lim[j + 1])
+    return Plan(comprometidas, estado, segundos, tuple(respaldo))
+
+
 def simular_semana(
     planta: Planta,
     semana: Semana,
@@ -125,13 +160,16 @@ def simular_semana(
     perfil: np.ndarray | None = None,
     fraccion_cara: float = 0.25,
     intensidad: np.ndarray | None = None,
+    vigilancias: dict | None = None,
 ):
-    """Resuelve las seis estrategias. Devuelve tabla, planes y errores de previsión.
+    """Resuelve las estrategias. Devuelve tabla, planes y errores de previsión.
 
     M y fechas son la matriz diaria (96 cuartos por hora de reloj) con al menos dos
     semanas antes del lunes. `previsores` asocia cada estrategia semanal con previsión
     entrenada a su previsor, por ejemplo {"L": PrevisorLEAR, "D": PrevisorML}. Con
     `intensidad` (tCO₂-eq/MWh en los cuartos de la semana) se añaden las emisiones.
+    `vigilancias` asocia una estrategia de `previsores` con su Vigilancia, por ejemplo
+    {"L": Vigilancia}, y añade su versión con vuelta al óptimo diario («LR»).
     """
     real = semana.precios
     lim, T = semana.limites, len(real)
@@ -169,13 +207,22 @@ def simular_semana(
     previsores = previsores or {}
     for clave, previsor in previsores.items():
         planes[clave] = _rodar(planta, semana, disponible, semanales, lambda j, p=previsor: con_futuro(j, p.predecir))
+    for clave, vigilancia in (vigilancias or {}).items():
+        planes[f"{clave}R"] = _rodar_con_respaldo(
+            planta, semana, disponible, semanales,
+            lambda j, p=previsores[clave]: con_futuro(j, p.predecir),
+            lambda j: con_futuro(j, None),
+            lambda j, v=vigilancia: v.motivo(pos_lunes + j - 1, range(2, 8 - j)),
+        )
     planes["O"] = _resolver(planta, real, disponible, semanales)
 
     filas = {}
     for clave, plan in planes.items():
         verificar_plan(planta, disponible, plan.inicios, diarios if clave in ("A", "B", "OD") else semanales)
-        filas[clave] = {"estrategia": NOMBRES_SEMANA[clave], **evaluar(planta, real, plan.inicios, intensidad),
-                        "segundos": plan.segundos, "optimo_demostrado": plan.estado == "Optimal"}
+        nombre = NOMBRES_SEMANA.get(clave) or f"{NOMBRES_SEMANA[clave[:-1]]}, con vuelta al óptimo diario"
+        filas[clave] = {"estrategia": nombre, **evaluar(planta, real, plan.inicios, intensidad),
+                        "segundos": plan.segundos, "optimo_demostrado": plan.estado == "Optimal",
+                        "dias_respaldo": len(plan.respaldo)}
     tabla = pd.DataFrame.from_dict(filas, orient="index")
     base, techo = tabla.loc["A", "coste_total_eur"], tabla.loc["O", "coste_total_eur"]
     tabla["ahorro_vs_A_eur"] = base - tabla["coste_total_eur"]

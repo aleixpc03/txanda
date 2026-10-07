@@ -18,7 +18,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .backtest import previsores_semana, resolver_fecha, resolver_semana, resolver_semana_sensibilidad, resolver_semana_variantes
+from .backtest import (previsores_semana, resolver_fecha, resolver_semana, resolver_semana_sensibilidad,
+                       resolver_semana_variantes, vigilancia_lear)
 from .estrategias import comparar_dia
 from .grafico import dibujar_dia, dibujar_semana, dibujar_sensibilidad
 from .planta import Planta
@@ -119,9 +120,14 @@ def orden_semana(args):
     pos = fechas.get_loc(lunes)
     futuros = _futuros(lunes - pd.Timedelta(days=10), lunes + pd.Timedelta(days=5))
     previsores = previsores_semana(lunes, M, fechas, futuros)
+    vigilancias = {"L": vigilancia_lear(lunes, M, fechas, previsores["L"])}
     semana = cargar_semana(lunes)
-    tabla, planes, errores = simular_semana(Planta(), semana, M, fechas, previsores, fraccion_cara=args.fraccion_cara)
+    tabla, planes, errores = simular_semana(Planta(), semana, M, fechas, previsores, fraccion_cara=args.fraccion_cara,
+                                            vigilancias=vigilancias)
     print(_formato(tabla, _columnas(tabla)))
+    dias_es = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    for j, motivo in planes["LR"].respaldo:
+        print(f"LR vuelve al óptimo diario el {dias_es[j]}: {motivo}")
     print("\nError medio de la previsión (€/MWh) según los días de antelación:")
     print(_formato(errores.groupby("k").mean()))
 
@@ -216,11 +222,16 @@ def orden_semanas(args):
               + ", ".join(f"{c} {v:,.0f}".replace(",", ".") for c, v in evitadas.drop("A").items()))
     if sin_emisiones:
         print(f"\nDías sin datos de emisiones de REE: {[str(d) for d, _ in sin_emisiones]}")
+    if "LR" in total.index:
+        respaldo = resultados[resultados.clave == "LR"]
+        print(f"\nLR volvió al óptimo diario {int(respaldo.dias_respaldo.sum())} de {7 * len(lunes)} días, "
+              f"en {int((respaldo.dias_respaldo > 0).sum())} semanas.")
 
     semanal = resultados.pivot(index="lunes", columns="clave", values="coste_total_eur")
     print("\nComparaciones semana a semana (diferencia de coste; negativo = la primera es más barata):")
     for a, b in [("H", "F"), ("H", "L"), ("H", "C"), ("H", "OD"), ("F", "C"), ("L", "C"), ("D", "C"), ("L", "F"),
-                 ("L", "D"), ("C", "OD"), ("F", "OD"), ("L", "OD"), ("D", "OD"), ("OD", "B"), ("B", "A")]:
+                 ("L", "D"), ("C", "OD"), ("F", "OD"), ("L", "OD"), ("D", "OD"), ("OD", "B"), ("B", "A"),
+                 ("LR", "L"), ("LR", "OD")]:
         if a not in semanal or b not in semanal:
             continue
         dif = semanal[a] - semanal[b]

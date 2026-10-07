@@ -29,11 +29,26 @@ def previsores_semana(lunes, M, fechas, futuros=None, hibrido: bool = True) -> d
     return previsores
 
 
+def vigilancia_lear(lunes, M, fechas, previsor_L):
+    """Vigilancia de LEAR para la semana del `lunes`.
+
+    Juzga cada previsión con el modelo que estaba en servicio cuando se hizo: el de la semana
+    anterior para las decisiones hasta el sábado anterior y `previsor_L` desde el domingo.
+    """
+    from .prevision import PrevisorLEAR, Vigilancia
+
+    pos = fechas.get_loc(pd.Timestamp(lunes))
+    anterior = PrevisorLEAR(M, fechas).entrenar(pos - 7)
+    return Vigilancia(M, [(pos - 8, anterior), (pos - 1, previsor_L)])
+
+
 def resolver_semana(lunes, M, fechas, fraccion_cara: float = 0.25, futuros=None, cambios: dict | None = None,
-                    gap: float = 0.0):
+                    gap: float = 0.0, respaldo: bool = False):
     """Entrena las previsiones con lo conocido el domingo y simula la semana.
 
-    `cambios` modifica la planta tipo (por ejemplo, {"coste_arranque_eur": 20000}).
+    `cambios` modifica la planta tipo (por ejemplo, {"coste_arranque_eur": 20000}). Con
+    `respaldo` se añade LR: LEAR con vuelta al óptimo diario si faltan datos. Con los datos
+    completos del backtest coincide con L, por eso no se calcula por defecto.
     """
     from dataclasses import replace
 
@@ -42,10 +57,11 @@ def resolver_semana(lunes, M, fechas, fraccion_cara: float = 0.25, futuros=None,
 
     modulo_semana.GAP = gap
     previsores = previsores_semana(lunes, M, fechas, futuros)
+    vigilancias = {"L": vigilancia_lear(lunes, M, fechas, previsores["L"])} if respaldo else None
     semana = cargar_semana(lunes)
     planta = replace(Planta(), **(cambios or {}))
     tabla, _, errores = simular_semana(planta, semana, M, fechas, previsores, fraccion_cara=fraccion_cara,
-                                       intensidad=intensidad_semana(semana))
+                                       intensidad=intensidad_semana(semana), vigilancias=vigilancias)
     tabla.insert(0, "lunes", lunes)
     errores.insert(0, "lunes", lunes)
     return tabla.reset_index(names="clave"), errores

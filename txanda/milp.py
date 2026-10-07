@@ -55,6 +55,7 @@ class Plan:
     inicios: tuple[int, ...]  # cuarto de hora en el que empieza cada colada
     estado: str
     segundos: float
+    respaldo: tuple[tuple[int, str], ...] = ()  # (día de la semana, motivo) en que se volvió al óptimo diario
 
 
 def inicios_permitidos(planta: Planta, disponible: np.ndarray) -> np.ndarray:

@@ -26,28 +26,42 @@ class ResultadoSemana:
     semana: Semana
     clave_txanda: str
     prevision_domingo: np.ndarray  # previsión hecha el domingo, en los cuartos reales de la semana
+    alarmas: tuple[tuple[int, str], ...] = ()  # (día, aviso) en que LEAR acertó menos que la ingenua
 
 
 def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str, futuros=None,
-                      con_emisiones: bool = False) -> ResultadoSemana:
+                      con_emisiones: bool = False, respaldo: bool = True) -> ResultadoSemana:
     """Simula la semana con todas las estrategias disponibles; Txanda es la de la previsión elegida.
 
     Sin futuros de OMIP son siete estrategias (A, B, OD, C, L, D, O); con ellos, nueve (F y H).
+    Con LEAR y `respaldo`, Txanda es LR: LEAR con vuelta al óptimo diario el día en que faltan
+    datos; ocupa el lugar de L en la comparación. `alarmas` recoge los días en que, al decidir,
+    LEAR llevaba siete días acertando menos que la ingenua: es un aviso, no cambia el plan.
     """
-    from .backtest import previsores_semana
+    from .backtest import previsores_semana, vigilancia_lear
 
     clave = PREVISIONES[prevision]
     if clave == "F" and (futuros is None or not len(futuros)):
         raise ValueError("No hay futuros de OMIP descargados para esta semana")
     pos = fechas.get_loc(pd.Timestamp(semana.lunes))
     previsores = previsores_semana(semana.lunes, M, fechas, futuros)
+    vigilancias = {"L": vigilancia_lear(semana.lunes, M, fechas, previsores["L"])} if respaldo and clave == "L" else None
     intensidad = intensidad_semana(semana) if con_emisiones else None
-    tabla, planes, _ = simular_semana(planta, semana, M, fechas, previsores, intensidad=intensidad)
+    tabla, planes, _ = simular_semana(planta, semana, M, fechas, previsores, intensidad=intensidad, vigilancias=vigilancias)
+    clave_txanda = clave
+    if vigilancias:
+        clave_txanda = "LR"
+        orden = ["LR" if c == "L" else c for c in tabla.index if c != "LR"]
+        tabla, planes = tabla.loc[orden], {c: planes[c] for c in orden}
 
     prever = previsores[clave].predecir if clave in previsores else (lambda p, k: ingenua(M, p, k))
     partes = [semana.dias[0].to_numpy(dtype=float)]
     partes += [a_cuartos(prever(pos - 1, i + 1), semana.dias[i].index) for i in range(1, 7)]
-    return ResultadoSemana(tabla, planes, semana, clave, np.concatenate(partes))
+    alarmas = ()
+    if vigilancias:
+        avisos = ((j, vigilancias["L"].alarma(pos - 1 + j)) for j in range(7))
+        alarmas = tuple((j, aviso) for j, aviso in avisos if aviso)
+    return ResultadoSemana(tabla, planes, semana, clave_txanda, np.concatenate(partes), alarmas)
 
 
 def orden_fabricacion(planta: Planta, semana: Semana, plan: Plan) -> pd.DataFrame:
@@ -82,7 +96,7 @@ def serie_potencia(planta: Planta, semana: Semana, planes: dict[str, Plan], clav
 
 
 # Colores por estrategia (paleta de referencia, orden fijo) y gris para las referencias
-COLORES = {"B": "#2a78d6", "OD": "#eb6834", "C": "#1baf7a", "F": "#eda100", "L": "#e87ba4", "D": "#008300"}
+COLORES = {"B": "#2a78d6", "OD": "#eb6834", "C": "#1baf7a", "F": "#eda100", "L": "#e87ba4", "LR": "#e87ba4", "D": "#008300"}
 GRIS, GRIS_OSCURO, AZUL = "#8a8984", "#52514e", "#2a78d6"
 # Día de la semana en castellano para los ejes (en Vega, day() empieza en domingo)
 DIA_EJE = "['dom','lun','mar','mié','jue','vie','sáb'][day(datum.value)] + ' ' + date(datum.value)"

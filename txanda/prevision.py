@@ -162,3 +162,61 @@ class PrevisorHibrido:
 
     def predecir(self, pos_D: int, k: int) -> np.ndarray:
         return (self.cerca if k < self.desde_k else self.lejos).predecir(pos_D, k)
+
+
+class Vigilancia:
+    """Decide cada día D si se puede usar la previsión o hay que volver al óptimo diario.
+
+    Solo usa lo que se sabe en D: los precios hasta D+1 y las previsiones a dos días hechas en
+    los últimos `dias` días, cada una con el previsor que estaba en servicio cuando se hizo.
+    `previsores` = [(primer día de decisión, previsor), …]: cada previsor vale desde su día
+    hasta el del siguiente, como cuando se reentrena cada semana.
+
+    Por defecto se vuelve al óptimo diario solo si faltan datos o la previsión no se puede
+    calcular; que la previsión acierte menos que la ingenua queda como aviso (`alarma`). Con
+    `por_acierto` también se vuelve por ese aviso: en el backtest de 51 semanas se activó 44
+    días, costó ≈ 9 k€ al año frente a L y no evitó la peor semana.
+    """
+
+    def __init__(self, M: np.ndarray, previsores: list, dias: int = 7, por_acierto: bool = False):
+        self.M, self.dias, self.por_acierto = M, dias, por_acierto
+        self.previsores = sorted(previsores, key=lambda par: par[0])
+
+    def _vigente(self, pos_D: int):
+        vigente = None
+        for desde, previsor in self.previsores:
+            if pos_D >= desde:
+                vigente = previsor
+        return vigente
+
+    def motivo(self, pos_D: int, horizontes=HORIZONTES) -> str | None:
+        """None si el día D se puede planificar con la previsión; si no, por qué hay que volver
+        al óptimo diario: faltan precios recientes o la previsión de hoy (para los `horizontes`
+        pedidos) no se puede calcular. Con `por_acierto`, también el motivo de `alarma`."""
+        previsor = self._vigente(pos_D)
+        if previsor is None:
+            return "no hay ninguna previsión en servicio"
+        if not np.isfinite(self.M[pos_D - HISTORIA_MIN + 1 : pos_D + 2]).all():
+            return "faltan precios de los últimos días"
+        try:
+            hoy = [previsor.predecir(pos_D, k) for k in horizontes]
+        except Exception as fallo:
+            return f"la previsión no se puede calcular ({type(fallo).__name__})"
+        if not all(np.isfinite(v).all() for v in hoy):
+            return "faltan datos para calcular la previsión"
+        return self.alarma(pos_D) if self.por_acierto else None
+
+    def alarma(self, pos_D: int) -> str | None:
+        """Aviso si en los últimos `dias` días la previsión a dos días, tal como se hizo, ha
+        acertado menos que la ingenua. None si acierta más o si no se puede comprobar."""
+        pasadas = [(q, self._vigente(q)) for q in range(pos_D - self.dias, pos_D)]
+        pasadas = [(q, p) for q, p in pasadas if p is not None]
+        try:
+            error = [np.abs(p.predecir(q, 2) - self.M[q + 2]).mean() for q, p in pasadas]
+            error_ingenua = [np.abs(ingenua(self.M, q, 2) - self.M[q + 2]).mean() for q, _ in pasadas]
+        except Exception:
+            return None
+        if not pasadas or not np.isfinite(error + error_ingenua).all() or np.mean(error) <= np.mean(error_ingenua):
+            return None
+        return (f"en los últimos {len(pasadas)} días la previsión a dos días falló {np.mean(error):.0f} €/MWh "
+                f"de media y la ingenua {np.mean(error_ingenua):.0f}")

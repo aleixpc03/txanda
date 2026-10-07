@@ -37,6 +37,7 @@ OPCIONES = [p for p in PREVISIONES if OMIP or PREVISIONES[p] != "F"]
 # La memoria deja las emisiones como trabajo pendiente: la app no las muestra hasta que la memoria las incluya.
 MOSTRAR_CO2 = False
 COLUMNAS_ORDEN = ["empieza", "termina", "coladas", "toneladas", "energía (MWh)", "precio medio (€/MWh)"]
+DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 st.set_page_config(page_title="Txanda", page_icon="🔥", layout="wide")
 
@@ -109,6 +110,18 @@ with pestana_semana:
         f"semana con *{nombre_prevision(prevision)}*, fija las coladas de mañana y vuelve a planificar al día siguiente. "
         f"Todas las estrategias producen {7 * coladas} coladas ({euros(7 * coladas * planta.toneladas_colada)[:-2]} t)."
     )
+    if txanda == "LR":
+        respaldo = r.planes[txanda].respaldo
+        if respaldo:
+            st.info("**Vuelta al óptimo diario.** Estos días Txanda no pudo usar la previsión: repartió a partes iguales "
+                    "las coladas que quedaban y colocó las de mañana con su precio real.\n\n"
+                    + "\n".join(f"- {DIAS_SEMANA[j]}: {motivo}." for j, motivo in respaldo))
+        if r.alarmas:
+            st.warning("**Aviso al planificador.** El plan no cambia, pero conviene revisarlo con más cuidado:\n\n"
+                       + "\n".join(f"- {DIAS_SEMANA[j]}: {aviso}." for j, aviso in r.alarmas))
+        if not respaldo and not r.alarmas:
+            st.caption("Vigilancia de la previsión: esta semana no han faltado datos y LEAR ha acertado más que la previsión "
+                       "ingenua. Si faltan datos, Txanda vuelve al óptimo diario; si LEAR acierta menos que la ingenua, avisa.")
 
     fila, base, regla = tabla.loc[txanda], tabla.loc["A"], tabla.loc["B"]
     k1, k2, k3, k4 = st.columns(4)

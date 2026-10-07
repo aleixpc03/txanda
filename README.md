@@ -90,6 +90,7 @@ al día siguiente (horizonte rodante).
 | C | Semanal, previsión ingenua | D+1 exacto; D+2…domingo = mismo día de la semana anterior | 126/semana, 12–22/día |
 | L | Semanal, previsión LEAR | D+1 exacto; D+2…domingo = LASSO autorregresivo (Lago et al., 2021) | 126/semana, 12–22/día |
 | D | Semanal, previsión ML | D+1 exacto; D+2…domingo = previsión con árboles de gradiente | 126/semana, 12–22/día |
+| LR | Semanal, LEAR con vuelta al óptimo diario | Como L; el día en que faltan datos para prever, como OD con lo que queda de la semana | 126/semana, 12–22/día |
 | O | Oráculo semanal | Toda la semana de antemano. No es implementable: es el techo | 126/semana, 12–22/día |
 
 Las previsiones están en `txanda/prevision.py` y se reentrenan cada semana con el último año
@@ -99,6 +100,18 @@ Las previsiones están en `txanda/prevision.py` y se reentrenan cada semana con 
   horarios de D+1, D, D−1 y del mismo día de la semana anterior, con la transformación asinh
   estandarizada de la literatura. Es la referencia estándar en previsión de precios eléctricos.
 - **ML**: árboles con gradiente (HistGradientBoosting) sobre precios recientes y calendario.
+- **Vuelta al óptimo diario** (`Vigilancia` en `txanda/prevision.py`, estrategia LR): cada día,
+  antes de planificar, se comprueba la previsión. Si faltan precios recientes o la previsión no
+  se puede calcular, ese día no se usa: las coladas que quedan de la semana se reparten a partes
+  iguales entre los días que faltan y las de mañana se colocan con su precio real, como en el
+  óptimo diario. Si en los últimos siete días LEAR ha acertado a dos días menos que la ingenua
+  (con las previsiones tal como se hicieron, del modelo que estaba en servicio), solo se avisa
+  al planificador. Volver también en ese caso (`Vigilancia(..., por_acierto=True)`) se probó en
+  el backtest: se activó 44 de 357 días, ahorró 318 k€/año frente a los 327 de L y no evitó la
+  peor semana, así que se queda como aviso. En la app es la estrategia de Txanda cuando se elige
+  LEAR. `tests/test_respaldo.py` comprueba que con datos completos coincide con L, que vigilando
+  el acierto una previsión muy mala da el óptimo diario y que, si faltan datos a media semana,
+  reparte lo que queda y cumple el tonelaje.
 - **Futuros de OMIP: no se usan.** Sus condiciones no permiten usar sus datos en el proyecto.
   El código (`txanda/omip.py`, estrategias F y H) se conserva, pero solo se activa con
   `TXANDA_OMIP=1`; ni la app ni los backtests lo usan por defecto.
