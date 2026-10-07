@@ -2,7 +2,6 @@
   "cambios": {
     "coste_arranque_eur": 20000.0,
     "secuencia_min": 6,
-    "cambio_secuencia_cuartos": 1,
     "holgura_menos": 2,
     "holgura_mas": 2
   },

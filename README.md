@@ -17,7 +17,7 @@ python3 -m venv .venv
 .venv/bin/python -m txanda periodo 2025-10-01 2026-09-29   # backtest día a día
 .venv/bin/python -m txanda semana 2026-02-23               # una semana (lunes): tabla, errores de previsión y gráfico
 .venv/bin/python -m txanda semanas 2025-10-06 2026-09-21   # backtest de todas las semanas (≈ 8 min con 8 núcleos)
-.venv/bin/python -m txanda semanas 2025-10-06 2026-09-21 --coste-arranque 20000 --secuencia-min 6 --rango 16-20 --cambio-artesa 0.25 --gap 0.0001 --etiqueta industrial   # otra planta, resultados en salidas/escenarios/
+.venv/bin/python -m txanda semanas 2025-10-06 2026-09-21 --coste-arranque 20000 --secuencia-min 6 --rango 16-20 --gap 0.0001 --etiqueta industrial   # otra planta, resultados en salidas/escenarios/
 .venv/bin/python -m txanda sensibilidad-arranque 2025-10-06 2026-09-21      # costes de arranque 0–10.000 €
 .venv/bin/python -m txanda sensibilidad-flexibilidad 2025-10-06 2026-09-21  # rangos diarios 18–18 a 0–22
 .venv/bin/python -m txanda precalcular 2025-10-06 2026-09-21  # precios y previsiones para la app publicada (≈ 5 min)
@@ -214,14 +214,16 @@ siguiente.
 
 ## Escenario industrial
 
-Con arranques caros y menos margen (w = 20.000 €, secuencias de al menos 6 coladas, 16–20
-coladas al día y 0,25 h de cambio de artesa), planificar la semana vale más: LEAR ahorra un
-3,3 % frente al horario fijo (≈ 984 k€/año, de los que 285 son arranques evitados) y captura
-alrededor del 80 % del ahorro máximo; gana al óptimo diario en 50 de 51 semanas y a la
-previsión ingenua en 32 (p = 0,016). El óptimo diario apenas mejora al horario fijo (0,2 %)
-porque lo que ahorra en energía lo pierde en arranques. Con estos parámetros el solver es
-más lento: se usó `--gap 0.0001` y en 42 de 357 problemas se agotó el tiempo y se tomó la
-mejor solución encontrada (el resumen lo indica).
+Con los valores que señaló la revisión externa de los parámetros (w = 20.000 € por
+interrupción, secuencias de al menos 6 coladas y 16–20 coladas al día; el cambio de artesa
+sigue en 1 h), planificar la semana vale más: LEAR ahorra un 2,7 % frente al horario fijo
+(≈ 820 k€/año: ≈ 470 por hacer menos cambios de secuencia, 13,0 por semana frente a 13,5, y
+≈ 350 de energía) y captura el 74 % del ahorro máximo; gana al óptimo diario en 49 de 51
+semanas y a la previsión ingenua en 32 (p = 0,037). El óptimo diario apenas mejora al horario
+fijo (0,6 %) porque lo que ahorra en energía lo pierde en arranques. Con estos parámetros el
+solver es más lento: se usó `--gap 0.0001` y en 22 de 357 problemas se agotó el tiempo y se
+tomó la mejor solución encontrada (el resumen lo indica); sin las 14 semanas afectadas, LEAR
+captura el 71 %.
 
 La app lo muestra en la pestaña «Resultados del año», debajo de la tabla del caso base, con
 el ahorro en k€ al año (los porcentajes no se comparan entre escenarios porque el coste por
