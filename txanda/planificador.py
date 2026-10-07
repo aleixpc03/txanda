@@ -30,13 +30,16 @@ class ResultadoSemana:
 
 
 def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str, futuros=None,
-                      con_emisiones: bool = False, respaldo: bool = True) -> ResultadoSemana:
+                      con_emisiones: bool = False, respaldo: bool = True,
+                      grabadas: dict | None = None) -> ResultadoSemana:
     """Simula la semana con todas las estrategias disponibles; Txanda es la de la previsión elegida.
 
     Sin futuros de OMIP son siete estrategias (A, B, OD, C, L, D, O); con ellos, nueve (F y H).
     Con LEAR y `respaldo`, Txanda es LR: LEAR con vuelta al óptimo diario el día en que faltan
     datos; ocupa el lugar de L en la comparación. `alarmas` recoge los días en que, al decidir,
     LEAR llevaba siete días acertando menos que la ingenua: es un aviso, no cambia el plan.
+    Con `grabadas` (de `precalculo.cargar_previsiones`) no se entrena nada: se usan las
+    previsiones guardadas, que son las mismas; solo vale sin futuros de OMIP.
     """
     from .backtest import previsores_semana, vigilancia_lear
 
@@ -44,8 +47,14 @@ def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str,
     if clave == "F" and (futuros is None or not len(futuros)):
         raise ValueError("No hay futuros de OMIP descargados para esta semana")
     pos = fechas.get_loc(pd.Timestamp(semana.lunes))
-    previsores = previsores_semana(semana.lunes, M, fechas, futuros)
-    vigilancias = {"L": vigilancia_lear(semana.lunes, M, fechas, previsores["L"])} if respaldo and clave == "L" else None
+    if grabadas is not None and futuros is None:
+        from .precalculo import previsores_grabados
+
+        previsores, vigilancia = previsores_grabados(semana.lunes, M, fechas, grabadas)
+    else:
+        previsores = previsores_semana(semana.lunes, M, fechas, futuros)
+        vigilancia = vigilancia_lear(semana.lunes, M, fechas, previsores["L"]) if respaldo and clave == "L" else None
+    vigilancias = {"L": vigilancia} if respaldo and clave == "L" else None
     intensidad = intensidad_semana(semana) if con_emisiones else None
     tabla, planes, _ = simular_semana(planta, semana, M, fechas, previsores, intensidad=intensidad, vigilancias=vigilancias)
     clave_txanda = clave

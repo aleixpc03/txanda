@@ -16,11 +16,11 @@ import streamlit as st
 from txanda.omip import tabla_futuros
 from txanda.planificador import PREVISIONES, grafico_semana, nombre_prevision, orden_fabricacion, planificar_semana
 from txanda.planta import Planta
+from txanda.precalculo import HISTORIA_APP as HISTORIA, cargar_previsiones
 from txanda.precios import matriz_diaria
 from txanda.semana import cargar_semana
 
 PRIMER_LUNES, ULTIMO_LUNES = dt.date(2025, 10, 6), dt.date(2026, 9, 21)
-HISTORIA = pd.Timedelta(days=400)
 TURNOS = {"Tres turnos (24 h)": ((0.0, 24.0),), "Dos turnos (06:00–22:00)": ((6.0, 22.0),)}
 RAIZ = Path(__file__).resolve().parent
 SALIDAS, PUBLICOS = RAIZ / "salidas", RAIZ / "resultados"
@@ -55,7 +55,8 @@ def calcular(lunes: dt.date, prevision: str, coladas: int, rango: tuple[int, int
     M, fechas, futuros = cargar_datos(lunes)
     planta = replace(Planta(), coladas_dia=coladas, holgura_menos=coladas - rango[0], holgura_mas=rango[1] - coladas,
                      coste_arranque_eur=float(coste_arranque), turnos=TURNOS[turnos])
-    return planta, planificar_semana(planta, cargar_semana(lunes), M, fechas, prevision, futuros, con_emisiones=MOSTRAR_CO2)
+    return planta, planificar_semana(planta, cargar_semana(lunes), M, fechas, prevision, futuros, con_emisiones=MOSTRAR_CO2,
+                                     grabadas=cargar_previsiones(lunes))
 
 
 def euros(v: float) -> str:

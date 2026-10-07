@@ -4,6 +4,7 @@
     python -m txanda periodo 2025-10-01 2026-09-29      backtest día a día
     python -m txanda semana 2026-02-23                  una semana (lunes): tabla, errores y gráfico
     python -m txanda semanas 2025-10-06 2026-09-21      backtest de todas las semanas entre dos lunes
+    python -m txanda precalcular 2025-10-06 2026-09-21  precios y previsiones para la app publicada
 """
 from __future__ import annotations
 
@@ -398,6 +399,20 @@ def orden_publicar(args):
     print(f"Resultados públicos en {destino}: {', '.join(sorted(str(p.relative_to(destino)) for p in destino.rglob('*') if p.is_file()))}")
 
 
+def orden_precalcular(args):
+    """Guarda en precalculo/ los precios de OMIE y las previsiones de cada semana, con la misma
+    matriz que carga la app, para que la app publicada no descargue ni entrene nada."""
+    from .precalculo import HISTORIA_APP, grabar_semana_app, guardar_precios, guardar_previsiones
+
+    lunes = pd.date_range(args.desde, args.hasta, freq="W-MON")
+    ruta_precios = guardar_precios(lunes[0] - HISTORIA_APP, lunes[-1] + pd.Timedelta(days=6))
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    with ProcessPoolExecutor(max_workers=args.procesos) as pool:
+        grabadas = dict(zip(lunes, pool.map(grabar_semana_app, lunes)))
+    ruta_previsiones = guardar_previsiones(grabadas)
+    print(f"{len(lunes)} semanas: {ruta_precios} y {ruta_previsiones}")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="txanda")
     parser.add_argument("--fraccion-cara", type=float, default=0.25, help="parte del día que la regla B considera cara")
@@ -440,6 +455,11 @@ def main(argv=None):
     p_flex.set_defaults(func=orden_sensibilidad_flexibilidad)
     p_pub = sub.add_parser("publicar", help="prepara resultados/ para la app publicada, sin datos de OMIP")
     p_pub.set_defaults(func=orden_publicar)
+    p_pre = sub.add_parser("precalcular", help="precios y previsiones de las semanas para la app publicada")
+    p_pre.add_argument("desde")
+    p_pre.add_argument("hasta")
+    p_pre.add_argument("--procesos", type=int, default=os.cpu_count())
+    p_pre.set_defaults(func=orden_precalcular)
     args = parser.parse_args(argv)
     args.func(args)
 

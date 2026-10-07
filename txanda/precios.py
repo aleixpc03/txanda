@@ -106,16 +106,41 @@ def _precios_ree_dia(fecha: dt.date, cache: Path) -> pd.Series | None:
     return pd.Series(dia.to_numpy(dtype=float), index=cuartos, name="precio_eur_mwh")
 
 
+@lru_cache(maxsize=1)
+def _precios_incluidos() -> pd.Series | None:
+    from .precalculo import cargar_precios
+
+    serie = cargar_precios()
+    return None if serie is None else serie.tz_convert(TZ)
+
+
+def _precios_incluidos_dia(fecha: dt.date) -> pd.Series | None:
+    """Precios del día en el fichero de OMIE incluido en el repositorio, o None si no está."""
+    serie = _precios_incluidos()
+    if serie is None:
+        return None
+    cuartos = cuartos_del_dia(fecha)
+    dia = serie[(serie.index >= cuartos[0]) & (serie.index <= cuartos[-1])]
+    if len(dia) != len(cuartos):
+        return None
+    return pd.Series(dia.to_numpy(dtype=float), index=cuartos, name="precio_eur_mwh")
+
+
 def precios_omie(fecha, cache: Path = CACHE, cache_ree: Path | None = CACHE_REE) -> pd.Series:
     """Precio marginal de España (€/MWh) para cada cuarto de hora del día.
 
     Antes del 1-10-2025 el mercado era horario: cada precio se repite en sus
-    cuatro cuartos. Usa el fichero de OMIE si ya está en `cache`; si no, la misma serie
-    de REE (un mes por petición, guardado en `cache_ree`); si tampoco, descarga de OMIE.
+    cuatro cuartos. Usa el fichero de OMIE si ya está en `cache`; si no, los precios de OMIE
+    que vienen con el repositorio (`precalculo/`); si no, la misma serie de REE (un mes por
+    petición, guardado en `cache_ree`); si tampoco, descarga de OMIE.
     Con `cache_ree=None` solo se usa OMIE.
     """
     fecha = pd.Timestamp(fecha).date()
     ruta = fichero_en_cache(fecha, cache)
+    if ruta is None and cache == CACHE:
+        serie = _precios_incluidos_dia(fecha)
+        if serie is not None:
+            return serie
     if ruta is None and cache_ree is not None:
         serie = _precios_ree_dia(fecha, cache_ree)
         if serie is not None:

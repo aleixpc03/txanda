@@ -20,6 +20,7 @@ python3 -m venv .venv
 .venv/bin/python -m txanda semanas 2025-10-06 2026-09-21 --coste-arranque 20000 --secuencia-min 6 --rango 16-20 --cambio-artesa 0.25 --gap 0.0001 --etiqueta industrial   # otra planta, resultados en salidas/escenarios/
 .venv/bin/python -m txanda sensibilidad-arranque 2025-10-06 2026-09-21      # costes de arranque 0–10.000 €
 .venv/bin/python -m txanda sensibilidad-flexibilidad 2025-10-06 2026-09-21  # rangos diarios 18–18 a 0–22
+.venv/bin/python -m txanda precalcular 2025-10-06 2026-09-21  # precios y previsiones para la app publicada (≈ 5 min)
 .venv/bin/python -m pytest -q                              # tests
 ```
 
@@ -41,7 +42,7 @@ de arranque y los turnos. La app simula cómo habría decidido Txanda día a dí
 precio con la previsión del domingo, la potencia del horno con Txanda, el horario fijo y
 el oráculo, la comparación de estrategias y la orden de fabricación descargable en CSV.
 **Resultados del año** muestra el backtest y los gráficos de sensibilidad si ya existen
-en `salidas/`. Una semana tarda unos 30 s la primera vez; después queda en caché.
+en `salidas/`. Una semana tarda unos 20 s la primera vez; después queda en caché.
 
 La app sigue a la memoria: cuatro indicadores, la comparación con todas las estrategias del
 benchmark (siete; nueve si se activan los futuros de OMIP con `TXANDA_OMIP=1`) y la tabla del
@@ -57,8 +58,14 @@ docker run -p 8501:8501 -v "$PWD/datos:/app/datos" -v "$PWD/salidas:/app/salidas
 
 ## Publicar en Streamlit Community Cloud
 
-En la nube los precios se descargan de Red Eléctrica, un mes por petición: la primera carga
-tarda alrededor de un minuto y después queda en caché.
+La app publicada no descarga ni entrena nada: usa `precalculo/`, que viene en el repositorio
+con los precios de OMIE (`precios_omie.csv.gz`, de septiembre de 2024 a septiembre de 2026)
+y las previsiones de LEAR y del aprendizaje automático de las 51 semanas (`previsiones.npz`),
+hechas cada una con lo que se sabía el día de decisión. Son las mismas previsiones que el
+cálculo en vivo, así que los resultados coinciden con el backtest; solo resuelve los MILP, que
+dependen de los parámetros elegidos. Sin `precalculo/`, o con `TXANDA_OMIP=1`, la app entrena
+en vivo como antes. Si cambian los previsores o las semanas, hay que regenerarlo con
+`.venv/bin/python -m txanda precalcular 2025-10-06 2026-09-21` y subirlo.
 
 1. Subir el repositorio a GitHub como privado (desde esta carpeta):
    `gh repo create txanda --private --source . --push`
