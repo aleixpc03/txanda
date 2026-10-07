@@ -51,12 +51,16 @@ def cargar_datos(lunes: dt.date):
 
 
 @st.cache_data(show_spinner=False)
-def calcular(lunes: dt.date, prevision: str, coladas: int, rango: tuple[int, int], coste_arranque: float, turnos: str):
+def calcular(lunes: dt.date, prevision: str, coladas: int, rango: tuple[int, int], coste_arranque: float, turnos: str,
+             completa: bool = False):
+    """Sin `completa`, solo A, B, O y Txanda (indicadores, gráfico y orden); con `completa`, el resto
+    de la comparación, reutilizando lo ya resuelto."""
     M, fechas, futuros = cargar_datos(lunes)
     planta = replace(Planta(), coladas_dia=coladas, holgura_menos=coladas - rango[0], holgura_mas=rango[1] - coladas,
                      coste_arranque_eur=float(coste_arranque), turnos=TURNOS[turnos])
+    previo = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos)[1] if completa else None
     return planta, planificar_semana(planta, cargar_semana(lunes), M, fechas, prevision, futuros, con_emisiones=MOSTRAR_CO2,
-                                     grabadas=cargar_previsiones(lunes))
+                                     grabadas=cargar_previsiones(lunes), completa=completa, previo=previo)
 
 
 def euros(v: float) -> str:
@@ -135,7 +139,21 @@ with pestana_semana:
     # Precio real y previsión del domingo; debajo, potencia del horno con Txanda, el horario fijo y el oráculo.
     st.altair_chart(grafico_semana(planta, r, prevision), width="stretch")
 
+    # La comparación va aquí, pero se calcula después de la orden de fabricación, que ya está lista.
+    comparacion = st.container()
+
+    st.subheader("Orden de fabricación con Txanda")
+    orden = orden_fabricacion(planta, r.semana, r.planes[txanda])[COLUMNAS_ORDEN]
+    st.dataframe(orden, width="stretch", hide_index=True, column_config={
+        "energía (MWh)": st.column_config.NumberColumn(format="%.0f"),
+        "precio medio (€/MWh)": st.column_config.NumberColumn(format="%.1f")})
+    st.download_button("Descargar la orden (CSV)", orden.to_csv(index=False).encode("utf-8"),
+                       file_name=f"txanda_orden_{lunes:%Y%m%d}.csv", mime="text/csv")
+
+with comparacion:
     st.subheader("Comparación de estrategias")
+    with st.spinner("Resolviendo las demás estrategias del benchmark…"):
+        tabla = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos, completa=True)[1].tabla
     columnas = ["estrategia", "coste_total_eur", "eur_por_t", "arranques", "ahorro_vs_A_pct", "captura_pct"]
     columnas += [c for c in ("kgco2_por_t", "emisiones_vs_A_pct") if c in tabla and MOSTRAR_CO2]
     tabla = tabla.assign(estrategia=[f"{e} (Txanda)" if k == txanda else e for k, e in zip(tabla.index, tabla.estrategia)])
@@ -152,14 +170,6 @@ with pestana_semana:
     st.caption(f"Las {len(tabla)} estrategias del benchmark sobre esta semana; Txanda es la que usa la previsión elegida. "
                "A, B y OD producen siempre las mismas coladas cada día; las semanales reparten la semana dentro del rango diario. "
                "El oráculo O conoce todos los precios de antemano: es el techo, no una estrategia posible.")
-
-    st.subheader("Orden de fabricación con Txanda")
-    orden = orden_fabricacion(planta, r.semana, r.planes[txanda])[COLUMNAS_ORDEN]
-    st.dataframe(orden, width="stretch", hide_index=True, column_config={
-        "energía (MWh)": st.column_config.NumberColumn(format="%.0f"),
-        "precio medio (€/MWh)": st.column_config.NumberColumn(format="%.1f")})
-    st.download_button("Descargar la orden (CSV)", orden.to_csv(index=False).encode("utf-8"),
-                       file_name=f"txanda_orden_{lunes:%Y%m%d}.csv", mime="text/csv")
 
 # ---------------------------------------------------------------- resultados del año
 def resumen_anual(resultados: pd.DataFrame, k_eur: bool = False) -> pd.DataFrame:

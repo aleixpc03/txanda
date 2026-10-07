@@ -161,6 +161,8 @@ def simular_semana(
     fraccion_cara: float = 0.25,
     intensidad: np.ndarray | None = None,
     vigilancias: dict | None = None,
+    solo: set | None = None,
+    hechos: dict | None = None,
 ):
     """Resuelve las estrategias. Devuelve tabla, planes y errores de previsión.
 
@@ -170,6 +172,8 @@ def simular_semana(
     `intensidad` (tCO₂-eq/MWh en los cuartos de la semana) se añaden las emisiones.
     `vigilancias` asocia una estrategia de `previsores` con su Vigilancia, por ejemplo
     {"L": Vigilancia}, y añade su versión con vuelta al óptimo diario («LR»).
+    `solo` limita las estrategias que se resuelven (A y O siempre, porque son la base y el
+    techo de la tabla) y `hechos` reutiliza planes ya resueltos con la misma planta y semana.
     """
     real = semana.precios
     lim, T = semana.limites, len(real)
@@ -198,23 +202,28 @@ def simular_semana(
         return senal
 
     senal_fija = np.concatenate([a_cuartos(perfil, d.index) for d in semana.dias])
-    planes = {
-        "A": _resolver(planta, senal_fija, disponible, diarios),
-        "B": _rodar(planta, semana, disponible, diarios, regla, dias_vista=2),
-        "OD": _rodar(planta, semana, disponible, diarios, lambda j: con_futuro(j, None), dias_vista=2),
-        "C": _rodar(planta, semana, disponible, semanales, lambda j: con_futuro(j, lambda p, k: ingenua(M, p, k))),
+    previsores, vigilancias = previsores or {}, vigilancias or {}
+    # En el orden de la tabla; cada versión con respaldo («LR») va detrás de la suya.
+    estrategias = {
+        "A": lambda: _resolver(planta, senal_fija, disponible, diarios),
+        "B": lambda: _rodar(planta, semana, disponible, diarios, regla, dias_vista=2),
+        "OD": lambda: _rodar(planta, semana, disponible, diarios, lambda j: con_futuro(j, None), dias_vista=2),
+        "C": lambda: _rodar(planta, semana, disponible, semanales, lambda j: con_futuro(j, lambda p, k: ingenua(M, p, k))),
     }
-    previsores = previsores or {}
     for clave, previsor in previsores.items():
-        planes[clave] = _rodar(planta, semana, disponible, semanales, lambda j, p=previsor: con_futuro(j, p.predecir))
-    for clave, vigilancia in (vigilancias or {}).items():
-        planes[f"{clave}R"] = _rodar_con_respaldo(
-            planta, semana, disponible, semanales,
-            lambda j, p=previsores[clave]: con_futuro(j, p.predecir),
-            lambda j: con_futuro(j, None),
-            lambda j, v=vigilancia: v.motivo(pos_lunes + j - 1, range(2, 8 - j)),
-        )
-    planes["O"] = _resolver(planta, real, disponible, semanales)
+        estrategias[clave] = lambda p=previsor: _rodar(planta, semana, disponible, semanales, lambda j: con_futuro(j, p.predecir))
+        if clave in vigilancias:
+            estrategias[f"{clave}R"] = lambda p=previsor, v=vigilancias[clave]: _rodar_con_respaldo(
+                planta, semana, disponible, semanales,
+                lambda j: con_futuro(j, p.predecir),
+                lambda j: con_futuro(j, None),
+                lambda j: v.motivo(pos_lunes + j - 1, range(2, 8 - j)),
+            )
+    estrategias["O"] = lambda: _resolver(planta, real, disponible, semanales)
+    hechos = hechos or {}
+    planes = {clave: hechos[clave] if clave in hechos else resolver_estrategia()
+              for clave, resolver_estrategia in estrategias.items()
+              if solo is None or clave in solo or clave in ("A", "O") or clave in hechos}
 
     filas = {}
     for clave, plan in planes.items():

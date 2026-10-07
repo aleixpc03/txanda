@@ -31,7 +31,8 @@ class ResultadoSemana:
 
 def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str, futuros=None,
                       con_emisiones: bool = False, respaldo: bool = True,
-                      grabadas: dict | None = None) -> ResultadoSemana:
+                      grabadas: dict | None = None, completa: bool = True,
+                      previo: "ResultadoSemana | None" = None) -> ResultadoSemana:
     """Simula la semana con todas las estrategias disponibles; Txanda es la de la previsión elegida.
 
     Sin futuros de OMIP son siete estrategias (A, B, OD, C, L, D, O); con ellos, nueve (F y H).
@@ -40,6 +41,9 @@ def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str,
     LEAR llevaba siete días acertando menos que la ingenua: es un aviso, no cambia el plan.
     Con `grabadas` (de `precalculo.cargar_previsiones`) no se entrena nada: se usan las
     previsiones guardadas, que son las mismas; solo vale sin futuros de OMIP.
+    Con `completa=False` solo se resuelve lo que necesitan los indicadores, el gráfico y la
+    orden: A, B, O y Txanda. `previo` reutiliza los planes de una llamada anterior con la
+    misma planta y semana, para completar la comparación sin repetirlos.
     """
     from .backtest import previsores_semana, vigilancia_lear
 
@@ -56,12 +60,12 @@ def planificar_semana(planta: Planta, semana: Semana, M, fechas, prevision: str,
         vigilancia = vigilancia_lear(semana.lunes, M, fechas, previsores["L"]) if respaldo and clave == "L" else None
     vigilancias = {"L": vigilancia} if respaldo and clave == "L" else None
     intensidad = intensidad_semana(semana) if con_emisiones else None
-    tabla, planes, _ = simular_semana(planta, semana, M, fechas, previsores, intensidad=intensidad, vigilancias=vigilancias)
-    clave_txanda = clave
-    if vigilancias:
-        clave_txanda = "LR"
-        orden = ["LR" if c == "L" else c for c in tabla.index if c != "LR"]
-        tabla, planes = tabla.loc[orden], {c: planes[c] for c in orden}
+    clave_txanda = "LR" if vigilancias else clave
+    # Con respaldo, LR ocupa el lugar de L en la comparación: L no se resuelve.
+    claves = {"A", "B", "OD", "C", *previsores, *(f"{c}R" for c in vigilancias or {}), "O"} - set(vigilancias or {})
+    solo = claves if completa else {"A", "B", "O", clave_txanda}
+    tabla, planes, _ = simular_semana(planta, semana, M, fechas, previsores, intensidad=intensidad, vigilancias=vigilancias,
+                                      solo=solo, hechos=previo.planes if previo else None)
 
     prever = previsores[clave].predecir if clave in previsores else (lambda p, k: ingenua(M, p, k))
     partes = [semana.dias[0].to_numpy(dtype=float)]

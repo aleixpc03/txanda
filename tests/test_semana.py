@@ -39,3 +39,15 @@ def test_rodar_con_informacion_perfecta_reproduce_el_oraculo():
     rodante = _rodar(planta, semana, disponible, cupos, lambda j: semana.precios)
     coste = lambda plan: coste_colada(planta, semana.precios)[list(plan.inicios)].sum() + planta.coste_arranque_eur * len(secuencias(planta, plan.inicios))
     assert abs(coste(rodante) - coste(oraculo)) < 1.0
+
+
+def test_por_partes_coincide_con_la_semana_entera():
+    """La app resuelve primero A, B, O y Txanda y después el resto reutilizando esos planes."""
+    semana, M, fechas = datos_sinteticos()
+    planta, perfil = Planta(), M[:7].mean(axis=0)
+    entera, _, _ = simular_semana(planta, semana, M, fechas, perfil=perfil)
+    primero, planes, _ = simular_semana(planta, semana, M, fechas, perfil=perfil, solo={"B", "C"})
+    assert list(primero.index) == ["A", "B", "C", "O"]
+    resto, _, _ = simular_semana(planta, semana, M, fechas, perfil=perfil, hechos=planes)
+    assert list(resto.index) == list(entera.index)
+    assert np.allclose(resto.coste_total_eur, entera.coste_total_eur)

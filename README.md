@@ -42,7 +42,9 @@ de arranque y los turnos. La app simula cómo habría decidido Txanda día a dí
 precio con la previsión del domingo, la potencia del horno con Txanda, el horario fijo y
 el oráculo, la comparación de estrategias y la orden de fabricación descargable en CSV.
 **Resultados del año** muestra el backtest y los gráficos de sensibilidad si ya existen
-en `salidas/`. Una semana tarda unos 20 s la primera vez; después queda en caché.
+en `salidas/`. La app resuelve primero lo que necesitan los indicadores, el gráfico y la
+orden (horario fijo, paradas en horas caras, oráculo y Txanda: unos 4–10 s) y después el
+resto de la comparación, que aparece en su sitio cuando acaba. Todo queda en caché.
 
 La app sigue a la memoria: cuatro indicadores, la comparación con todas las estrategias del
 benchmark (siete; nueve si se activan los futuros de OMIP con `TXANDA_OMIP=1`) y la tabla del
