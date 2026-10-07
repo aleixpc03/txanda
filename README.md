@@ -188,7 +188,7 @@ Comparaciones semana a semana (prueba de Wilcoxon pareada):
 ## Sensibilidad
 
 **Coste de arranque** (0 a 10.000 €, `resultados/sensibilidad_arranque.png`). La clasificación
-no cambia: L captura entre el 50 % y el 64 % del ahorro máximo y gana al óptimo diario con
+no cambia: L captura entre el 50 % y el 63 % del ahorro máximo y gana al óptimo diario con
 cualquier coste (p ≤ 0,003). A la previsión ingenua le gana con significación a partir de
 2.500 €. B queda siempre por debajo del horario fijo. El techo del
 oráculo se mueve poco (3,8–4,3 %). Una artesa dura como mucho 10 coladas, así que una semana
