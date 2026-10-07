@@ -53,14 +53,15 @@ def cargar_datos(lunes: dt.date):
 
 @st.cache_data(show_spinner=False)
 def calcular(lunes: dt.date, prevision: str, coladas: int, rango: tuple[int, int], coste_arranque: float, turnos: str,
-             completa: bool = False):
+             con_emisiones: bool, completa: bool = False):
     """Sin `completa`, solo A, B, O y Txanda (indicadores, gráfico y orden); con `completa`, el resto
-    de la comparación, reutilizando lo ya resuelto."""
+    de la comparación, reutilizando lo ya resuelto. `con_emisiones` va en los argumentos para que
+    forme parte de la clave de la caché."""
     M, fechas, futuros = cargar_datos(lunes)
     planta = replace(Planta(), coladas_dia=coladas, holgura_menos=coladas - rango[0], holgura_mas=rango[1] - coladas,
                      coste_arranque_eur=float(coste_arranque), turnos=TURNOS[turnos])
-    previo = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos)[1] if completa else None
-    return planta, planificar_semana(planta, cargar_semana(lunes), M, fechas, prevision, futuros, con_emisiones=MOSTRAR_CO2,
+    previo = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos, con_emisiones)[1] if completa else None
+    return planta, planificar_semana(planta, cargar_semana(lunes), M, fechas, prevision, futuros, con_emisiones=con_emisiones,
                                      grabadas=cargar_previsiones(lunes), completa=completa, previo=previo)
 
 
@@ -102,7 +103,7 @@ with pestana_semana:
         st.stop()
     try:
         with st.spinner("Planificando la semana día a día…"):
-            planta, r = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos)
+            planta, r = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos, MOSTRAR_CO2)
     except RuntimeError:
         st.error("Con estos turnos no caben las coladas pedidas. Baja las coladas por día o amplía los turnos.")
         st.stop()
@@ -161,7 +162,7 @@ with pestana_semana:
 with comparacion:
     st.subheader("Comparación de estrategias")
     with st.spinner("Resolviendo las demás estrategias del benchmark…"):
-        tabla = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos, completa=True)[1].tabla
+        tabla = calcular(lunes, prevision, coladas, rango, coste_arranque, turnos, MOSTRAR_CO2, completa=True)[1].tabla
     columnas = ["estrategia", "coste_total_eur", "eur_por_t", "arranques", "ahorro_vs_A_pct", "captura_pct"]
     columnas += [c for c in ("kgco2_por_t", "emisiones_vs_A_pct") if c in tabla and MOSTRAR_CO2]
     tabla = tabla.assign(estrategia=[f"{e} (Txanda)" if k == txanda else e for k, e in zip(tabla.index, tabla.estrategia)])
