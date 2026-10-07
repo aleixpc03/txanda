@@ -136,7 +136,7 @@ def grafico_semana(planta: Planta, r: ResultadoSemana, prevision: str):
     series = ["Precio real", serie_prevision]
     grafico_precio = alt.Chart(precio).mark_line(strokeWidth=1.6, interpolate="step-after").encode(
         x=x, y=alt.Y("€/MWh:Q"),
-        color=alt.Color("serie:N", scale=alt.Scale(domain=series, range=[AZUL, GRIS]), legend=alt.Legend(orient="top", title=None)),
+        color=alt.Color("serie:N", scale=alt.Scale(domain=series, range=[AZUL, GRIS]), legend=alt.Legend(orient="top", title=None, labelLimit=0)),
         strokeDash=alt.StrokeDash("serie:N", scale=alt.Scale(domain=series, range=[[1, 0], [5, 3]]), legend=None),
         tooltip=[tooltip_hora, alt.Tooltip("serie:N"), alt.Tooltip("€/MWh:Q", format=".1f")],
     ).properties(height=210)
