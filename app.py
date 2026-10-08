@@ -37,7 +37,7 @@ OPCIONES = [p for p in PREVISIONES if OMIP or PREVISIONES[p] != "F"]
 # Emisiones con la intensidad media de Red Eléctrica (apartado 5.4 de la memoria): quinto indicador
 # y columnas de CO₂ en las tablas. En la app publicada salen de precalculo/.
 MOSTRAR_CO2 = True
-COLUMNAS_ORDEN = ["empieza", "termina", "coladas", "toneladas", "energía (MWh)", "precio medio (€/MWh)"]
+COLUMNAS_ORDEN = ["empieza", "termina", "coladas", "toneladas", "energía (MWh)", "coste energía (€)", "precio medio (€/MWh)"]
 DIAS_SEMANA = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 
 st.set_page_config(page_title="Txanda", page_icon="🔥", layout="wide")
@@ -113,7 +113,7 @@ with pestana_semana:
 
     tabla, txanda = r.tabla, r.clave_txanda
     st.markdown(
-        f"**Semana del {lunes:%d-%m-%Y}.** Cada día a las 12:00 Txanda conoce los precios de mañana, prevé el resto de la "
+        f"**Semana del {lunes:%d-%m-%Y}.** Cada día, tras la subasta de las 12:00, Txanda conoce los precios de mañana, prevé el resto de la "
         f"semana con *{nombre_prevision(prevision)}*, fija las coladas de mañana y vuelve a planificar al día siguiente. "
         f"Todas las estrategias producen {7 * coladas} coladas ({euros(7 * coladas * planta.toneladas_colada)[:-2]} t)."
     )
@@ -155,6 +155,7 @@ with pestana_semana:
     orden = orden_fabricacion(planta, r.semana, r.planes[txanda])[COLUMNAS_ORDEN]
     st.dataframe(orden, width="stretch", hide_index=True, column_config={
         "energía (MWh)": st.column_config.NumberColumn(format="%.0f"),
+        "coste energía (€)": st.column_config.NumberColumn(format="%.0f"),
         "precio medio (€/MWh)": st.column_config.NumberColumn(format="%.1f")})
     st.download_button("Descargar la orden (CSV)", orden.to_csv(index=False).encode("utf-8"),
                        file_name=f"txanda_orden_{lunes:%Y%m%d}.csv", mime="text/csv")
