@@ -134,9 +134,10 @@ with pestana_semana:
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Coste con Txanda", euros(fila.coste_total_eur), delta=euros(fila.coste_total_eur - base.coste_total_eur) + " frente al horario fijo",
               delta_color="inverse")
-    k2.metric("Ahorro frente al horario fijo", f"{fila.ahorro_vs_A_pct:.1f} %".replace(".", ","))
-    k3.metric("Ahorro frente a parar en horas caras", f"{100 * (regla.coste_total_eur - fila.coste_total_eur) / regla.coste_total_eur:.1f} %".replace(".", ","))
-    k4.metric("Parte del ahorro máximo capturado", f"{fila.captura_pct:.0f} %", help="0 % = horario fijo, 100 % = oráculo que conoce toda la semana de antemano.")
+    # Rótulos cortos: en pantallas estrechas los largos se cortaban («Ahorro frente al horari…»).
+    k2.metric("Ahorro vs horario fijo", f"{fila.ahorro_vs_A_pct:.1f} %".replace(".", ","))
+    k3.metric("Ahorro vs parar en horas caras", f"{100 * (regla.coste_total_eur - fila.coste_total_eur) / regla.coste_total_eur:.1f} %".replace(".", ","))
+    k4.metric("Ahorro máximo capturado", f"{fila.captura_pct:.0f} %", help="0 % = horario fijo, 100 % = oráculo que conoce toda la semana de antemano.")
     if MOSTRAR_CO2 and "kgco2_por_t" in tabla:
         k5.metric("Emisiones de CO₂", f"{fila.kgco2_por_t:.1f} kg/t".replace(".", ","), delta_color="inverse",
                   delta=f"{fila.emisiones_vs_A_pct:+.1f} % frente al horario fijo".replace(".", ","),
