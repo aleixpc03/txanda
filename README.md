@@ -3,6 +3,13 @@
 Planificación de coladas de una acería de horno eléctrico frente al precio cuartohorario
 de la electricidad. Proyecto para Donostia Meeting Minds 2026, Categoría Empresa.
 
+**Prototipo en línea: https://txanda.streamlit.app** (si la app está dormida, pulsa el botón y
+espera unos dos minutos a que arranque).
+
+En un backtest de 51 semanas con precios reales de OMIE (octubre de 2025 a septiembre de 2026),
+Txanda ahorra un 1,9 % frente al mejor horario fijo (≈ 327 k€ al año en la planta tipo) y gana
+al óptimo diario en 37 de 51 semanas (p = 0,002). Detalle en [Resultados](#resultados-51-semanas-del-6-10-2025-al-27-9-2026).
+
 ## Instalación
 
 ```bash
@@ -24,12 +31,6 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q                              # tests
 ```
 
-## Memoria
-
-`memoria/Memoria_Txanda_borrador.docx` (y su PDF) es el borrador de la memoria del concurso: 8
-páginas con los apartados que piden las bases. Lo marcado en amarillo lo tiene que completar
-el equipo (nombres, captura del prototipo, inversión).
-
 ## Prototipo
 
 ```bash
@@ -41,10 +42,13 @@ Abre `http://localhost:8501`. En **Planificar una semana** se elige la semana (o
 de arranque y los turnos. La app simula cómo habría decidido Txanda día a día y muestra el
 precio con la previsión del domingo, la potencia del horno con Txanda, el horario fijo y
 el oráculo, la comparación de estrategias y la orden de fabricación descargable en CSV.
-**Resultados del año** muestra el backtest y los gráficos de sensibilidad si ya existen
-en `salidas/`. La app resuelve primero lo que necesitan los indicadores, el gráfico y la
-orden (horario fijo, paradas en horas caras, oráculo y Txanda: unos 4–10 s) y después el
-resto de la comparación, que aparece en su sitio cuando acaba. Todo queda en caché.
+**Resultados del año** muestra el backtest, el escenario industrial y los gráficos de
+sensibilidad publicados en `resultados/`. La app resuelve primero lo que necesitan los
+indicadores, el gráfico y la orden (horario fijo, paradas en horas caras, oráculo y Txanda) y
+después el resto de la comparación, que aparece en su sitio cuando acaba. En la versión web,
+con una combinación nueva, lo primero tarda entre 10 y 60 s según los parámetros (más cuanto
+mayor es el coste de arranque) y la comparación completa, menos de minuto y medio. Todo queda
+en caché.
 
 La app sigue a la memoria: cinco indicadores (coste, ahorro frente al horario fijo y frente a parar
 en horas caras, parte del ahorro máximo capturada y emisiones de CO₂), la comparación con
@@ -52,13 +56,6 @@ todas las estrategias del benchmark (siete; nueve si se activan los futuros de O
 `TXANDA_OMIP=1`) y la tabla del año como la tabla 4. Las emisiones usan la intensidad media
 del sistema peninsular de Red Eléctrica en cada cuarto de hora; se ocultan con
 `MOSTRAR_CO2 = False` en `app.py`.
-
-Con Docker (montando las carpetas de datos y resultados):
-
-```bash
-docker build -t txanda .
-docker run -p 8501:8501 -v "$PWD/datos:/app/datos" -v "$PWD/salidas:/app/salidas" txanda
-```
 
 ## Publicar en Streamlit Community Cloud
 
@@ -72,14 +69,10 @@ dependen de los parámetros elegidos. Sin `precalculo/`, o con `TXANDA_OMIP=1`, 
 en vivo como antes. Si cambian los previsores o las semanas, hay que regenerarlo con
 `.venv/bin/python -m txanda precalcular 2025-10-06 2026-09-21` y subirlo.
 
-1. Subir el repositorio a GitHub como privado (desde esta carpeta):
-   `gh repo create txanda --private --source . --push`
-2. Entrar en [share.streamlit.io](https://share.streamlit.io) con la cuenta de GitHub, crear una
+1. Entrar en [share.streamlit.io](https://share.streamlit.io) con la cuenta de GitHub, crear una
    app nueva y elegir el repositorio `txanda`, la rama `main` y el fichero `app.py`. En la
    configuración avanzada, Python 3.12.
-3. Si el repositorio es privado, la app también lo es: solo la ven las personas invitadas por
-   correo desde *Settings → Sharing*.
-4. Cada vez que se repitan los backtests en local, actualizar la versión publicable y subirla:
+2. Cada vez que se repitan los backtests en local, actualizar la versión publicable y subirla:
    `.venv/bin/python -m txanda publicar`, y después `git add resultados && git commit` y `git push`.
 
 Los precios se descargan de OMIE (fichero `marginalpdbc`, columna de España, última versión
@@ -150,8 +143,11 @@ s.a. un camino de 0 a T: en cada cuarto t el horno pasa a t+1 parado o empieza u
 
 Con `p_k` la potencia de la colada en su cuarto `k` y `Δt = 0,25 h`,
 `c[s] = Σ_k Δt·p_k·precio[s+k]`. Sin los cupos es un camino mínimo en un grafo acíclico,
-cuya relajación lineal es entera. Una semana se resuelve en 0,5–2 s; la primera formulación
-(una binaria por colada) daba los mismos óptimos en unos 50 s.
+cuya relajación lineal es entera. Una semana se resuelve en menos de 4 s (0,2–3,4 s, mediana
+1,2 s, medido con el oráculo semanal en las 51 semanas, en un portátil y con un solo proceso); la
+primera formulación (una binaria por colada) daba los mismos óptimos en unos 50 s. La columna
+`segundos` de `resultados/semanas.csv` da tiempos mayores porque se calculó con ocho semanas
+en paralelo y antes de que el MILP probara primero la relajación lineal.
 
 `tests/test_milp_dia.py` comprueba contra fuerza bruta que el MILP encuentra el óptimo, y
 cada plan se valida con `verificar_plan`, que no usa el MILP.

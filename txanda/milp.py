@@ -20,7 +20,7 @@ G = cambio de artesa, Lmin..Lmax = coladas por secuencia):
          momento de decidir, solo se elige cuánto se alargan
 
 Sin los cupos sería un camino mínimo en un grafo acíclico, con relajación lineal entera;
-los cupos lo rompen muy poco, y una semana (≈ 4.700 secuencias posibles) se resuelve en
+los cupos lo rompen muy poco, y una semana (≈ 4.500 secuencias posibles) se resuelve en
 segundos. Cada
 estrategia solo cambia c y w: la planta y las restricciones son las mismas.
 """
