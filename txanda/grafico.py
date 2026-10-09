@@ -15,6 +15,11 @@ from .milp import potencia
 from .planta import Planta
 
 
+def _euros(v: float) -> str:
+    """Importe sin decimales con punto de miles. Solo el número: los nombres llevan comas."""
+    return f"{v:,.0f}".replace(",", ".")
+
+
 def _tramos(mascara: np.ndarray):
     """Pares (inicio, fin) de los tramos consecutivos a True."""
     bordes = np.diff(np.concatenate([[0], mascara.astype(int), [0]]))
@@ -45,7 +50,7 @@ def dibujar_dia(planta: Planta, precios: pd.Series, planes: dict, tabla: pd.Data
         ax.set_ylim(0, pmax)
         ax.set_ylabel(clave, rotation=0, labelpad=14, fontsize=12, va="center")
         fila = tabla.loc[clave]
-        ax.set_title(f"{NOMBRES[clave]} · {fila.coste_total_eur:,.0f} € · {fila.arranques} secuencias".replace(",", "."),
+        ax.set_title(f"{NOMBRES[clave]} · {_euros(fila.coste_total_eur)} € · {fila.arranques} secuencias",
                      loc="right", fontsize=9, pad=3)
     marcas = np.arange(0, T, 8)
     ejes[-1].set_xticks(marcas, [precios.index[i].strftime("%H:%M") for i in marcas])
@@ -85,7 +90,7 @@ def dibujar_semana(planta: Planta, semana, planes: dict, tabla: pd.DataFrame, ru
         ax.set_ylim(0, pmax)
         ax.set_ylabel(clave, rotation=0, labelpad=16, fontsize=11, va="center")
         fila = tabla.loc[clave]
-        ax.set_title(f"{NOMBRES_SEMANA[clave]} · {fila.coste_total_eur:,.0f} € · captura {fila.captura_pct:.0f} %".replace(",", "."),
+        ax.set_title(f"{NOMBRES_SEMANA[clave]} · {_euros(fila.coste_total_eur)} € · captura {fila.captura_pct:.0f} %",
                      loc="right", fontsize=9, pad=3)
     for ax in ejes:
         for borde in lim[1:-1]:
